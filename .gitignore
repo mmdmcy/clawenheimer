@@ -1,0 +1,11 @@
+**/.DS_Store
+**/node_modules/
+**/dist/
+**/.vercel/
+**/.next/
+**/playtest/
+*.log
+*.local
+.env
+.env.*
+*.zip

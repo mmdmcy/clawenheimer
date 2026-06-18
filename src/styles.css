@@ -1,0 +1,477 @@
+:root {
+  --ink: #050505;
+  --panel: rgba(13, 13, 17, 0.86);
+  --panel-hard: #101016;
+  --cream: #fff4d7;
+  --muted: #b8b4a7;
+  --coral: #ff735c;
+  --mint: #79f2b1;
+  --cyan: #6ed7ff;
+  --yellow: #ffd75e;
+  --berry: #e62b5e;
+  --outline: #2e2a31;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#app {
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  overflow: hidden;
+  background: var(--ink);
+  color: var(--cream);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+  letter-spacing: 0;
+  touch-action: none;
+  overscroll-behavior: none;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+button {
+  font: inherit;
+  color: inherit;
+}
+
+#game-root {
+  position: fixed;
+  inset: 0;
+}
+
+canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+  image-rendering: pixelated;
+}
+
+.hud {
+  position: fixed;
+  top: max(10px, env(safe-area-inset-top));
+  left: max(10px, env(safe-area-inset-left));
+  right: max(10px, env(safe-area-inset-right));
+  display: grid;
+  grid-template-columns: auto 1fr;
+  align-items: start;
+  gap: 8px 12px;
+  pointer-events: none;
+  z-index: 5;
+}
+
+.hud__brand {
+  color: var(--cream);
+  text-shadow: 3px 3px 0 #000;
+  font-size: clamp(18px, 4vw, 30px);
+  line-height: 1;
+}
+
+.hud__status {
+  justify-self: end;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: end;
+  gap: 6px;
+}
+
+.hud__status span,
+.scorebar__player {
+  background: var(--panel);
+  border: 2px solid var(--outline);
+  box-shadow: 0 3px 0 #000;
+}
+
+.hud__status span {
+  min-width: 54px;
+  padding: 7px 9px;
+  text-align: center;
+  font-size: 12px;
+}
+
+.scorebar {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.scorebar__player {
+  min-width: 0;
+  padding: 6px 7px;
+  display: grid;
+  grid-template-columns: 10px auto 1fr auto;
+  gap: 6px;
+  align-items: center;
+  font-size: 11px;
+}
+
+.scorebar__rank {
+  color: var(--yellow);
+  min-width: 32px;
+}
+
+.scorebar__move {
+  margin-left: 3px;
+  color: var(--mint);
+}
+
+.scorebar__move.is-down {
+  color: var(--coral);
+}
+
+.scorebar__dot {
+  width: 10px;
+  height: 10px;
+  background: var(--player-color);
+}
+
+.scorebar__name {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.menu-panel,
+.result-panel {
+  position: fixed;
+  left: 50%;
+  top: 50%;
+  width: min(520px, calc(100vw - 32px));
+  transform: translate(-50%, -50%);
+  background: var(--panel);
+  border: 3px solid var(--cream);
+  box-shadow: 0 8px 0 #000;
+  padding: 18px;
+  z-index: 8;
+}
+
+.menu-panel {
+  max-height: calc(100svh - 96px);
+  overflow: auto;
+}
+
+.menu-panel[hidden],
+.result-panel[hidden] {
+  display: none;
+}
+
+.menu-panel__logo {
+  font-size: clamp(34px, 11vw, 70px);
+  line-height: 0.9;
+  color: var(--coral);
+  text-shadow: 4px 4px 0 #000;
+}
+
+.menu-panel__subtitle {
+  margin-top: 8px;
+  color: var(--cream);
+  font-size: 13px;
+}
+
+.result-panel {
+  width: min(560px, calc(100vw - 26px));
+  padding: 14px;
+  z-index: 9;
+}
+
+.result-panel__title {
+  font-size: clamp(22px, 7vw, 38px);
+  line-height: 1;
+  color: var(--yellow);
+  text-shadow: 3px 3px 0 #000;
+}
+
+.result-panel__subtitle {
+  margin-top: 6px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.result-list {
+  display: grid;
+  gap: 7px;
+  margin-top: 12px;
+}
+
+.result-row {
+  display: grid;
+  grid-template-columns: 38px 1fr auto auto;
+  align-items: center;
+  gap: 8px;
+  min-height: 42px;
+  padding: 7px 8px;
+  background: #07070a;
+  border: 2px solid var(--outline);
+}
+
+.result-row:first-child {
+  border-color: var(--yellow);
+}
+
+.result-row__rank {
+  color: var(--yellow);
+  font-size: 16px;
+}
+
+.result-row__name {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  font-size: 13px;
+}
+
+.result-row__dot {
+  width: 12px;
+  height: 12px;
+  background: var(--player-color);
+  flex: 0 0 auto;
+}
+
+.result-row__score,
+.result-row__award {
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.result-row__award {
+  color: var(--mint);
+}
+
+.roster {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  margin: 16px 0;
+}
+
+.roster__slot {
+  border: 2px solid var(--outline);
+  background: #07070a;
+  padding: 8px;
+  min-height: 54px;
+}
+
+.roster__name {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 13px;
+}
+
+.roster__badge {
+  width: 12px;
+  height: 12px;
+  background: var(--player-color);
+}
+
+.roster__meta {
+  margin-top: 5px;
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.menu-panel__actions {
+  display: flex;
+  gap: 10px;
+}
+
+.primary-button,
+.secondary-button,
+.mini-toggle-button,
+.minigame-picker button {
+  min-height: 44px;
+  border-radius: 0;
+  border: 2px solid var(--cream);
+  padding: 10px 14px;
+  box-shadow: 0 4px 0 #000;
+  cursor: pointer;
+}
+
+.primary-button {
+  flex: 1;
+  background: var(--berry);
+}
+
+.secondary-button {
+  background: #17363f;
+}
+
+.mini-toggle-button {
+  width: 100%;
+  margin-top: 10px;
+  background: #101016;
+}
+
+.minigame-picker {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.minigame-picker[hidden] {
+  display: none;
+}
+
+.minigame-picker button {
+  min-width: 0;
+  background: #122b35;
+  color: var(--cream);
+  font-size: 12px;
+}
+
+.primary-button:active,
+.secondary-button:active,
+.mini-toggle-button:active,
+.minigame-picker button:active,
+.action-button:active {
+  transform: translateY(3px);
+  box-shadow: 0 1px 0 #000;
+}
+
+.toast {
+  position: fixed;
+  left: 50%;
+  top: 33%;
+  min-width: min(420px, calc(100vw - 36px));
+  max-width: calc(100vw - 36px);
+  transform: translate(-50%, -50%);
+  padding: 12px 16px;
+  background: rgba(0, 0, 0, 0.78);
+  border: 2px solid var(--cream);
+  box-shadow: 0 5px 0 #000;
+  text-align: center;
+  font-size: clamp(15px, 4vw, 24px);
+  line-height: 1.25;
+  opacity: 0;
+  pointer-events: none;
+  z-index: 7;
+}
+
+.toast.is-visible {
+  opacity: 1;
+}
+
+.touch-controls {
+  position: fixed;
+  left: max(16px, env(safe-area-inset-left));
+  right: max(16px, env(safe-area-inset-right));
+  bottom: max(54px, calc(env(safe-area-inset-bottom) + 14px));
+  display: flex;
+  align-items: end;
+  justify-content: space-between;
+  pointer-events: none;
+  z-index: 6;
+}
+
+.stick,
+.action-button {
+  pointer-events: auto;
+  touch-action: none;
+}
+
+.stick {
+  position: relative;
+  width: 112px;
+  height: 112px;
+  border: 3px solid rgba(255, 244, 215, 0.72);
+  background: rgba(0, 0, 0, 0.34);
+  box-shadow: 0 5px 0 #000;
+}
+
+.stick::before {
+  content: "";
+  position: absolute;
+  inset: 50% auto auto 50%;
+  width: 8px;
+  height: 8px;
+  background: rgba(255, 244, 215, 0.5);
+  transform: translate(-50%, -50%);
+}
+
+.stick__thumb {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 42px;
+  height: 42px;
+  margin: -21px 0 0 -21px;
+  background: var(--cyan);
+  border: 3px solid var(--cream);
+  box-shadow: 0 3px 0 #000;
+}
+
+.action-button {
+  width: 90px;
+  height: 90px;
+  border-radius: 0;
+  border: 3px solid var(--cream);
+  background: var(--coral);
+  box-shadow: 0 6px 0 #000;
+  display: grid;
+  place-items: center;
+  font-size: 40px;
+  cursor: pointer;
+}
+
+.action-button span {
+  transform: translateY(-2px);
+}
+
+@media (min-width: 900px) {
+  .touch-controls {
+    left: 28px;
+    right: 28px;
+    bottom: 58px;
+  }
+
+  .stick {
+    width: 104px;
+    height: 104px;
+  }
+
+  .action-button {
+    width: 82px;
+    height: 82px;
+  }
+}
+
+@media (max-width: 560px) {
+  .hud {
+    grid-template-columns: 1fr;
+  }
+
+  .hud__status {
+    justify-self: stretch;
+  }
+
+  .hud__status span {
+    flex: 1;
+  }
+
+  .scorebar {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .menu-panel {
+    top: 46%;
+    padding: 14px;
+  }
+
+  .result-panel {
+    top: 47%;
+  }
+
+  .result-row {
+    grid-template-columns: 30px 1fr auto;
+  }
+
+  .roster {
+    grid-template-columns: 1fr;
+  }
+}

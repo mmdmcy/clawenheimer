@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no"
+    />
+    <meta name="theme-color" content="#050505" />
+    <link rel="icon" href="data:," />
+    <title>Clawparty</title>
+  </head>
+  <body>
+    <main id="app" aria-label="Clawparty game">
+      <div id="game-root"></div>
+
+      <section id="hud" class="hud" aria-live="polite">
+        <div class="hud__brand">CLAWPARTY</div>
+        <div class="hud__status">
+          <span id="round-chip">Round 1/4</span>
+          <span id="mode-chip">Lobby</span>
+          <span id="timer-chip">00</span>
+        </div>
+        <div id="scorebar" class="scorebar"></div>
+      </section>
+
+      <section id="menu-panel" class="menu-panel">
+        <div class="menu-panel__logo">CLAWPARTY</div>
+        <div id="menu-subtitle" class="menu-panel__subtitle">6 rounds. 4 claws. Tiny chaos.</div>
+        <div id="roster" class="roster"></div>
+        <div class="menu-panel__actions">
+          <button id="start-button" class="primary-button" type="button">Start Party</button>
+          <button id="shuffle-button" class="secondary-button" type="button">Shuffle CPUs</button>
+        </div>
+        <button id="minigame-toggle-button" class="mini-toggle-button" type="button">Select Minigame</button>
+        <div id="minigame-picker" class="minigame-picker" hidden>
+          <button type="button" data-minigame-key="claw">Pearl Panic</button>
+          <button type="button" data-minigame-key="soccer">Goal Rush</button>
+          <button type="button" data-minigame-key="paint">Beret Trace</button>
+          <button type="button" data-minigame-key="dog">Bone Nap</button>
+          <button type="button" data-minigame-key="count">Critter Count</button>
+          <button type="button" data-minigame-key="memory">Tile Tide</button>
+        </div>
+      </section>
+
+      <section id="result-panel" class="result-panel" hidden>
+        <div id="result-title" class="result-panel__title">Round Results</div>
+        <div id="result-subtitle" class="result-panel__subtitle">Crowns updated</div>
+        <div id="result-list" class="result-list"></div>
+      </section>
+
+      <div id="toast" class="toast" aria-live="polite"></div>
+
+      <section id="touch-controls" class="touch-controls" aria-label="Touch controls">
+        <div id="stick" class="stick" role="presentation">
+          <div id="stick-thumb" class="stick__thumb"></div>
+        </div>
+        <button id="action-button" class="action-button" type="button" aria-label="Action">
+          <span>!</span>
+        </button>
+      </section>
+    </main>
+    <script type="module" src="/src/main.ts"></script>
+    <script async src="https://vibej.am/2026/widget.js"></script>
+  </body>
+</html>
