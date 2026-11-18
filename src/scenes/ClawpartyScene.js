@@ -1,131 +1,82 @@
-import Phaser from "phaser";
-import type {
-  Contestant,
-  ContestantConfig,
-  Ingredient,
-  InputController,
-  MiniGameDefinition,
-  MiniGameKey,
-  PaintBoard,
-  Pearl,
-} from "../game/types";
+import { Gfx, Label, drawSprite, loadImages } from "../lib/draw.js";
+import { Clock } from "../lib/loop.js";
+import { between, clamp, distance, floatBetween, lerp, shuffle } from "../lib/math.js";
 
-interface ContestantView {
-  container: Phaser.GameObjects.Container;
-  sprite: Phaser.GameObjects.Image;
-  accessory: Phaser.GameObjects.Graphics;
-  carryIcon: Phaser.GameObjects.Graphics;
-  label: Phaser.GameObjects.Text;
-  score: Phaser.GameObjects.Text;
-}
+/**
+ * @typedef {import("../game/types.js").Contestant} Contestant
+ * @typedef {import("../game/types.js").ContestantConfig} ContestantConfig
+ * @typedef {import("../game/types.js").Ingredient} Ingredient
+ * @typedef {import("../game/types.js").InputController} InputController
+ * @typedef {import("../game/types.js").MiniGameDefinition} MiniGameDefinition
+ * @typedef {import("../game/types.js").MiniGameKey} MiniGameKey
+ * @typedef {import("../game/types.js").PaintBoard} PaintBoard
+ * @typedef {import("../game/types.js").Pearl} Pearl
+ * @typedef {import("../game/types.js").Point} Point
+ * @typedef {import("../lib/draw.js").SpriteDraw} SpriteDraw
+ * @typedef {ReturnType<typeof import("../lib/loop.js").createViewport>} Viewport
+ */
 
-interface ArenaBounds {
-  left: number;
-  right: number;
-  top: number;
-  bottom: number;
-  width: number;
-  height: number;
-  cx: number;
-  cy: number;
-}
+/**
+ * A contestant as drawn: shadow, walking sprite, hat, carried item, name and
+ * score, all relative to the contestant's rounded position.
+ * @typedef {object} ContestantView
+ * @property {number} x
+ * @property {number} y
+ * @property {{ x: number, y: number, w: number, h: number, frame: number, angle: number, alpha: number, flipX: boolean }} sprite
+ * @property {Gfx} accessory
+ * @property {Gfx} carryIcon
+ * @property {Label} label
+ * @property {Label} score
+ */
 
-interface Burst {
-  x: number;
-  y: number;
-  lifeMs: number;
-  color: number;
-}
-
-interface CountCritter {
-  id: number;
-  x: number;
-  y: number;
-  vx: number;
-  sprite: string;
-  wobble: number;
-}
-
-interface MemoryTile {
-  x: number;
-  y: number;
-  w: number;
-  h: number;
-  color: number;
-  name: string;
-  safe: boolean;
-}
-
-interface SoccerBall {
-  id: number;
-  x: number;
-  y: number;
-  vx: number;
-  vy: number;
-  lastTouchId?: number;
-  cooldownMs: number;
-}
-
-interface DogBone {
-  playerId: number;
-  x: number;
-  y: number;
-  homeX: number;
-  homeY: number;
-  carriedBy?: number;
-  delivered: boolean;
-  color: number;
-}
-
-interface DogChase {
-  caught: DogCatch[];
-  phase: "toPlayer" | "toHome" | "back";
-  x: number;
-  y: number;
-  fromX: number;
-  fromY: number;
-  toX: number;
-  toY: number;
-  elapsedMs: number;
-  durationMs: number;
-}
-
-interface DogCatch {
-  playerId: number;
-  bonePlayerId: number;
-  fromX: number;
-  fromY: number;
-  homeX: number;
-  homeY: number;
-}
-
-interface SavedContestant {
-  id: number;
-  name: string;
-  sprite: string;
-  color: number;
-  uiColor: string;
-  isHuman: boolean;
-  skillLabel?: string;
-  crowns: number;
-  roundScore: number;
-  totalScore: number;
-  difficulty: number;
-  mistakeRate: number;
-  reactionMs: number;
-  paintShapeIndex: number;
-}
-
-interface SavedPartyProgress {
-  version: number;
-  savedAt: number;
-  phase: "countdown" | "playing" | "roundOver";
-  roundIndex: number;
-  currentGameKey: MiniGameKey;
-  timerMs: number;
-  singleGameKey?: MiniGameKey;
-  contestants: SavedContestant[];
-}
+/** @typedef {{ left: number, right: number, top: number, bottom: number, width: number, height: number, cx: number, cy: number }} ArenaBounds */
+/** @typedef {{ x: number, y: number, lifeMs: number, color: number }} Burst */
+/** @typedef {{ id: number, x: number, y: number, vx: number, sprite: string, wobble: number }} CountCritter */
+/** @typedef {{ x: number, y: number, w: number, h: number, color: number, name: string, safe: boolean }} MemoryTile */
+/** @typedef {{ id: number, x: number, y: number, vx: number, vy: number, lastTouchId?: number, cooldownMs: number }} SoccerBall */
+/** @typedef {{ playerId: number, x: number, y: number, homeX: number, homeY: number, carriedBy?: number, delivered: boolean, color: number }} DogBone */
+/** @typedef {{ playerId: number, bonePlayerId: number, fromX: number, fromY: number, homeX: number, homeY: number }} DogCatch */
+/**
+ * @typedef {object} DogChase
+ * @property {DogCatch[]} caught
+ * @property {"toPlayer" | "toHome" | "back"} phase
+ * @property {number} x
+ * @property {number} y
+ * @property {number} fromX
+ * @property {number} fromY
+ * @property {number} toX
+ * @property {number} toY
+ * @property {number} elapsedMs
+ * @property {number} durationMs
+ */
+/**
+ * @typedef {object} SavedContestant
+ * @property {number} id
+ * @property {string} name
+ * @property {string} sprite
+ * @property {number} color
+ * @property {string} uiColor
+ * @property {boolean} isHuman
+ * @property {string} [skillLabel]
+ * @property {number} crowns
+ * @property {number} roundScore
+ * @property {number} totalScore
+ * @property {number} difficulty
+ * @property {number} mistakeRate
+ * @property {number} reactionMs
+ * @property {number} paintShapeIndex
+ */
+/**
+ * @typedef {object} SavedPartyProgress
+ * @property {number} version
+ * @property {number} savedAt
+ * @property {"countdown" | "playing" | "roundOver"} phase
+ * @property {number} roundIndex
+ * @property {MiniGameKey} currentGameKey
+ * @property {number} timerMs
+ * @property {MiniGameKey} [singleGameKey]
+ * @property {SavedContestant[]} contestants
+ */
 
 const TOTAL_ROUNDS = 6;
 const COUNTDOWN_MS = 5_000;
@@ -144,7 +95,8 @@ const CPU_PRESETS = [
   { difficulty: 0.18, mistakeRate: 0.6, reactionMs: 1_240, skillLabel: "Messy CPU" },
 ];
 
-const MINI_GAMES: MiniGameDefinition[] = [
+/** @type {MiniGameDefinition[]} */
+const MINI_GAMES = [
   {
     key: "claw",
     name: "Pearl Panic",
@@ -183,163 +135,177 @@ const MINI_GAMES: MiniGameDefinition[] = [
   },
 ];
 
-const CONTESTANTS: ContestantConfig[] = [
+/** @type {ContestantConfig[]} */
+const CONTESTANTS = [
   { id: 0, name: "Invado", sprite: "invader", color: 0x5cc8ff, uiColor: "#5cc8ff", isHuman: true },
   { id: 1, name: "Shrimpy", sprite: "shrimp", color: 0xff8b4c, uiColor: "#ff8b4c", isHuman: false },
   { id: 2, name: "Pip", sprite: "apple", color: 0xe62b5e, uiColor: "#e62b5e", isHuman: false },
   { id: 3, name: "Lobstar", sprite: "lobster", color: 0xff3b26, uiColor: "#ff3b26", isHuman: false },
 ];
 
-const clamp = (value: number, min: number, max: number) => Math.max(min, Math.min(max, value));
+const SPRITE_DIR = "assets/sprites/";
 
-const distance = (ax: number, ay: number, bx: number, by: number) => Math.hypot(ax - bx, ay - by);
+/** Images by name; each walk sheet is a strip of four 96x96 frames. */
+const IMAGE_FILES = {
+  "invader-walk": "invader-walk.png",
+  "shrimp-walk": "shrimp-walk.png",
+  "apple-walk": "apple-walk.png",
+  "lobster-walk": "lobster-walk.png",
+  "dog-sleep": "dog-sleep.png",
+  "dog-alert": "dog-alert.png",
+  "dog-run": "dog-run.png",
+  bone: "bone.png",
+  "soccer-ball": "soccer-ball.png",
+  "soccer-goal": "soccer-goal.png",
+  "count-beach-sea": "critter-count-beach-sea.png",
+  "claw-seabed": "pearl-panic-seabed.png",
+  "clam-pearl": "clam-pearl.png",
+  "clam-empty": "clam-empty.png",
+};
 
-export class ClawpartyScene extends Phaser.Scene {
-  private readonly controls: InputController;
-  private contestants: Contestant[] = [];
-  private views = new Map<number, ContestantView>();
-  private arena: ArenaBounds = this.makeArena();
-  private phase: "lobby" | "countdown" | "playing" | "roundOver" | "final" = "lobby";
-  private roundIndex = 0;
-  private currentGame: MiniGameDefinition = MINI_GAMES[0];
-  private timerMs = 0;
-  private countdownMs = COUNTDOWN_MS;
-  private ingredients: Ingredient[] = [];
-  private pearls: Pearl[] = [];
-  private paintBoards: PaintBoard[] = [];
-  private countCritters: CountCritter[] = [];
-  private countActual = 0;
-  private countSpawnMs = 0;
-  private countWatchMs = 18_000;
-  private countTarget = 0;
-  private countGuessStarted = false;
-  private countGuessLockGraceMs = 0;
-  private memoryTiles: MemoryTile[] = [];
-  private memoryCycle = 0;
-  private memoryPhase: "show" | "choose" | "resolve" = "show";
-  private memoryPhaseMs = 0;
-  private memoryTarget = "red";
-  private soccerBalls: SoccerBall[] = [];
-  private soccerKeeperId = 0;
-  private soccerShooterOrder: number[] = [];
-  private soccerShooterIndex = 0;
-  private soccerCurrentShooterId = 0;
-  private soccerPhase: "aim" | "shot" | "reset" = "aim";
-  private soccerTurnMs = 0;
-  private soccerAimX = 0;
-  private dogBones: DogBone[] = [];
-  private dogState: "sleep" | "look" = "sleep";
-  private dogStateMs = 0;
-  private dogGraceMs = 0;
-  private dogChase?: DogChase;
-  private paintPointer = { down: false, x: 0, y: 0 };
-  private bursts: Burst[] = [];
-  private nextItemId = 1;
-  private toastUntil = 0;
-  private domTickMs = 0;
-  private lastPartySaveMs = 0;
-  private rankMoves = new Map<number, number>();
-  private soccerBallImages = new Map<number, Phaser.GameObjects.Image>();
-  private dogBoneImages = new Map<number, Phaser.GameObjects.Image>();
-  private clamImages = new Map<number, Phaser.GameObjects.Image>();
-  private soccerGoalImage?: Phaser.GameObjects.Image;
-  private dogImage?: Phaser.GameObjects.Image;
-  private countBgImage?: Phaser.GameObjects.Image;
-  private clawBgImage?: Phaser.GameObjects.Image;
+const BACKGROUND = "#050505";
 
-  private worldGfx!: Phaser.GameObjects.Graphics;
-  private propGfx!: Phaser.GameObjects.Graphics;
-  private paintGfx!: Phaser.GameObjects.Graphics;
-  private effectsGfx!: Phaser.GameObjects.Graphics;
-  private countdownText!: Phaser.GameObjects.Text;
-  private overlayText!: Phaser.GameObjects.Text;
-  private overlayHint!: Phaser.GameObjects.Text;
+/** @param {number} x @param {number} y @returns {Point} */
+const point = (x, y) => ({ x, y });
 
-  private roundChip: HTMLElement | null = null;
-  private modeChip: HTMLElement | null = null;
-  private timerChip: HTMLElement | null = null;
-  private scorebar: HTMLElement | null = null;
-  private roster: HTMLElement | null = null;
-  private menuPanel: HTMLElement | null = null;
-  private menuSubtitle: HTMLElement | null = null;
-  private startButton: HTMLButtonElement | null = null;
-  private shuffleButton: HTMLButtonElement | null = null;
-  private miniGameToggleButton: HTMLButtonElement | null = null;
-  private miniGamePicker: HTMLElement | null = null;
-  private resultPanel: HTMLElement | null = null;
-  private resultTitle: HTMLElement | null = null;
-  private resultSubtitle: HTMLElement | null = null;
-  private resultList: HTMLElement | null = null;
-  private toast: HTMLElement | null = null;
-  private singleGameKey?: MiniGameKey;
+export class ClawpartyScene {
+  /** @type {InputController} */
+  controls;
+  /** @type {Viewport} */
+  view;
+  /** Game time and delayed calls. */
+  time = new Clock();
+  /** The game's size in CSS pixels. */
+  scale = { width: window.innerWidth, height: window.innerHeight };
+  /** @type {Map<string, HTMLImageElement>} */
+  images = new Map();
+  /** @type {Contestant[]} */
+  contestants = [];
+  /** @type {Map<number, ContestantView>} */
+  views = new Map();
+  /** Contestants from back to front, as last updated. @type {Contestant[]} */
+  drawOrder = [];
+  /** Images to draw this frame, each with its layer depth. @type {Array<SpriteDraw & { depth: number }>} */
+  sprites = [];
+  /** @type {ArenaBounds} */
+  arena = this.makeArena();
+  /** @type {"lobby" | "countdown" | "playing" | "roundOver" | "final"} */
+  phase = "lobby";
+  roundIndex = 0;
+  /** @type {MiniGameDefinition} */
+  currentGame = MINI_GAMES[0];
+  timerMs = 0;
+  countdownMs = COUNTDOWN_MS;
+  /** @type {Ingredient[]} */
+  ingredients = [];
+  /** @type {Pearl[]} */
+  pearls = [];
+  /** @type {PaintBoard[]} */
+  paintBoards = [];
+  /** @type {CountCritter[]} */
+  countCritters = [];
+  countActual = 0;
+  countSpawnMs = 0;
+  countWatchMs = 18_000;
+  countTarget = 0;
+  countGuessStarted = false;
+  countGuessLockGraceMs = 0;
+  /** @type {MemoryTile[]} */
+  memoryTiles = [];
+  memoryCycle = 0;
+  /** @type {"show" | "choose" | "resolve"} */
+  memoryPhase = "show";
+  memoryPhaseMs = 0;
+  memoryTarget = "red";
+  /** @type {SoccerBall[]} */
+  soccerBalls = [];
+  soccerKeeperId = 0;
+  /** @type {number[]} */
+  soccerShooterOrder = [];
+  soccerShooterIndex = 0;
+  soccerCurrentShooterId = 0;
+  /** @type {"aim" | "shot" | "reset"} */
+  soccerPhase = "aim";
+  soccerTurnMs = 0;
+  soccerAimX = 0;
+  /** @type {DogBone[]} */
+  dogBones = [];
+  /** @type {"sleep" | "look"} */
+  dogState = "sleep";
+  dogStateMs = 0;
+  dogGraceMs = 0;
+  /** @type {DogChase | undefined} */
+  dogChase;
+  paintPointer = { down: false, x: 0, y: 0 };
+  /** @type {Burst[]} */
+  bursts = [];
+  nextItemId = 1;
+  toastUntil = 0;
+  domTickMs = 0;
+  lastPartySaveMs = 0;
+  /** @type {Map<number, number>} */
+  rankMoves = new Map();
 
-  constructor(controls: InputController) {
-    super("ClawpartyScene");
+  // Shapes recorded each frame, drawn in this order: world, paint, props, effects.
+  worldGfx = new Gfx();
+  paintGfx = new Gfx();
+  propGfx = new Gfx();
+  effectsGfx = new Gfx();
+  countdownText = new Label({ fontSize: 92, color: "#fff4d7", stroke: "#000000", strokeThickness: 10 }).setVisible(false);
+  overlayText = new Label({ fontSize: 46, color: "#fff4d7", stroke: "#000000", strokeThickness: 7 }).setVisible(false);
+  overlayHint = new Label({ fontSize: 14, color: "#6ed7ff", stroke: "#000000", strokeThickness: 4, align: "center", wrapWidth: 280 }).setVisible(false);
+
+  /** @type {HTMLElement | null} */
+  roundChip = null;
+  /** @type {HTMLElement | null} */
+  modeChip = null;
+  /** @type {HTMLElement | null} */
+  timerChip = null;
+  /** @type {HTMLElement | null} */
+  scorebar = null;
+  /** @type {HTMLElement | null} */
+  roster = null;
+  /** @type {HTMLElement | null} */
+  menuPanel = null;
+  /** @type {HTMLElement | null} */
+  menuSubtitle = null;
+  /** @type {HTMLButtonElement | null} */
+  startButton = null;
+  /** @type {HTMLButtonElement | null} */
+  shuffleButton = null;
+  /** @type {HTMLButtonElement | null} */
+  miniGameToggleButton = null;
+  /** @type {HTMLElement | null} */
+  miniGamePicker = null;
+  /** @type {HTMLElement | null} */
+  resultPanel = null;
+  /** @type {HTMLElement | null} */
+  resultTitle = null;
+  /** @type {HTMLElement | null} */
+  resultSubtitle = null;
+  /** @type {HTMLElement | null} */
+  resultList = null;
+  /** @type {HTMLElement | null} */
+  toast = null;
+  /** @type {MiniGameKey | undefined} */
+  singleGameKey;
+
+  /**
+   * @param {InputController} controls
+   * @param {Viewport} view
+   */
+  constructor(controls, view) {
     this.controls = controls;
+    this.view = view;
   }
 
-  preload() {
-    this.load.image("invader", "/assets/sprites/invader.png");
-    this.load.image("shrimp", "/assets/sprites/shrimp.png");
-    this.load.image("apple", "/assets/sprites/apple.png");
-    this.load.image("lobster", "/assets/sprites/lobster.png");
-    for (const contestant of CONTESTANTS) {
-      this.load.spritesheet(`${contestant.sprite}-walk`, `/assets/sprites/${contestant.sprite}-walk.png`, { frameWidth: 96, frameHeight: 96 });
-    }
-    this.load.image("dog", "/assets/sprites/dog.png");
-    this.load.image("dog-sleep", "/assets/sprites/dog-sleep.png");
-    this.load.image("dog-alert", "/assets/sprites/dog-alert.png");
-    this.load.image("dog-run", "/assets/sprites/dog-run.png");
-    this.load.image("bone", "/assets/sprites/bone.png");
-    this.load.image("soccer-ball", "/assets/sprites/soccer-ball.png");
-    this.load.image("soccer-goal", "/assets/sprites/soccer-goal.png");
-    this.load.image("count-beach-sea", "/assets/sprites/critter-count-beach-sea.png");
-    this.load.image("claw-seabed", "/assets/sprites/pearl-panic-seabed.png");
-    this.load.image("clam-closed", "/assets/sprites/clam-closed.png");
-    this.load.image("clam-pearl", "/assets/sprites/clam-pearl.png");
-    this.load.image("clam-empty", "/assets/sprites/clam-empty.png");
+  async preload() {
+    const sources = Object.fromEntries(Object.entries(IMAGE_FILES).map(([name, file]) => [name, SPRITE_DIR + file]));
+    this.images = await loadImages(sources);
   }
 
   create() {
-    this.worldGfx = this.add.graphics().setDepth(0);
-    this.propGfx = this.add.graphics().setDepth(2);
-    this.paintGfx = this.add.graphics().setDepth(1);
-    this.effectsGfx = this.add.graphics().setDepth(6);
-    this.countdownText = this.add
-      .text(0, 0, "", {
-        fontFamily: "monospace",
-        fontSize: "92px",
-        color: "#fff4d7",
-        stroke: "#000000",
-        strokeThickness: 10,
-      })
-      .setOrigin(0.5)
-      .setDepth(20)
-      .setVisible(false);
-    this.overlayText = this.add
-      .text(0, 0, "", {
-        fontFamily: "monospace",
-        fontSize: "46px",
-        color: "#fff4d7",
-        stroke: "#000000",
-        strokeThickness: 7,
-      })
-      .setOrigin(0.5)
-      .setDepth(18)
-      .setVisible(false);
-    this.overlayHint = this.add
-      .text(0, 0, "", {
-        fontFamily: "monospace",
-        fontSize: "14px",
-        color: "#6ed7ff",
-        stroke: "#000000",
-        strokeThickness: 4,
-        align: "center",
-        wordWrap: { width: 280, useAdvancedWrap: true },
-      })
-      .setOrigin(0.5)
-      .setDepth(18)
-      .setVisible(false);
+    this.scale = { width: this.view.width, height: this.view.height };
     this.setupDom();
     this.setupPointerInput();
     this.createContestants();
@@ -348,24 +314,37 @@ export class ClawpartyScene extends Phaser.Scene {
     this.updateDom(true);
     this.tryRestorePartyProgress();
 
-    this.scale.on("resize", () => {
-      this.arena = this.makeArena();
-      this.clampContestants();
-    });
-
     window.addEventListener("beforeunload", () => {
       this.savePartyProgress(true);
     });
   }
 
-  update(time: number, deltaMs: number) {
+  /**
+   * One frame: follow a resize, run delayed calls, update, then draw.
+   * @param {number} time
+   * @param {number} deltaMs
+   */
+  step(time, deltaMs) {
+    if (this.view.fit()) {
+      this.scale.width = this.view.width;
+      this.scale.height = this.view.height;
+      this.arena = this.makeArena();
+      this.clampContestants();
+    }
+    this.time.tick(time, deltaMs);
+    this.update(time, deltaMs);
+    this.render();
+  }
+
+  /** @param {number} time @param {number} deltaMs */
+  update(time, deltaMs) {
     const delta = Math.min(deltaMs, 48) / 1000;
     this.arena = this.makeArena();
     this.worldGfx.clear();
     this.propGfx.clear();
     this.paintGfx.clear();
     this.effectsGfx.clear();
-    this.hidePropImages();
+    this.sprites = [];
     this.overlayText.setVisible(false);
     this.overlayHint.setVisible(false);
 
@@ -395,7 +374,7 @@ export class ClawpartyScene extends Phaser.Scene {
     this.savePartyProgress();
   }
 
-  private setupDom() {
+  setupDom() {
     this.roundChip = document.querySelector("#round-chip");
     this.modeChip = document.querySelector("#mode-chip");
     this.timerChip = document.querySelector("#timer-chip");
@@ -427,9 +406,9 @@ export class ClawpartyScene extends Phaser.Scene {
       this.miniGamePicker?.toggleAttribute("hidden");
     });
 
-    this.miniGamePicker?.addEventListener("click", (event) => {
-      const button = (event.target as HTMLElement).closest<HTMLButtonElement>("[data-minigame-key]");
-      const key = button?.dataset.minigameKey as MiniGameKey | undefined;
+    this.miniGamePicker?.addEventListener("click", (/** @type {MouseEvent} */ event) => {
+      const button = /** @type {HTMLElement} */ (event.target).closest("[data-minigame-key]");
+      const key = /** @type {MiniGameKey | undefined} */ (/** @type {HTMLElement | null} */ (button)?.dataset.minigameKey);
       if (!key) {
         return;
       }
@@ -437,30 +416,41 @@ export class ClawpartyScene extends Phaser.Scene {
     });
   }
 
-  private setupPointerInput() {
-    const setPointer = (pointer: Phaser.Input.Pointer, down: boolean) => {
-      this.paintPointer.down = down;
-      this.paintPointer.x = pointer.x;
-      this.paintPointer.y = pointer.y;
+  setupPointerInput() {
+    const canvas = this.view.canvas;
+    /** @param {PointerEvent} event */
+    const setPointer = (event) => {
+      const rect = canvas.getBoundingClientRect();
+      this.paintPointer.x = event.clientX - rect.left;
+      this.paintPointer.y = event.clientY - rect.top;
     };
 
-    this.input.on("pointerdown", (pointer: Phaser.Input.Pointer) => setPointer(pointer, true));
-    this.input.on("pointermove", (pointer: Phaser.Input.Pointer) => {
-      this.paintPointer.x = pointer.x;
-      this.paintPointer.y = pointer.y;
+    canvas.addEventListener("pointerdown", (event) => {
+      event.preventDefault();
+      setPointer(event);
+      this.paintPointer.down = true;
     });
-    this.input.on("pointerup", (pointer: Phaser.Input.Pointer) => setPointer(pointer, false));
-    this.input.on("pointerout", () => {
+    canvas.addEventListener("pointermove", setPointer);
+    canvas.addEventListener("pointerup", (event) => {
+      setPointer(event);
+      this.paintPointer.down = false;
+    });
+    canvas.addEventListener("pointerleave", () => {
       this.paintPointer.down = false;
     });
   }
 
-  private createContestants() {
-    const roster = Phaser.Utils.Array.Shuffle([...CONTESTANTS]);
+  createContestants() {
+    const roster = shuffle([...CONTESTANTS]);
     this.contestants = roster.map((config, index) => this.makeContestant(config, index));
   }
 
-  private makeContestant(config: ContestantConfig, index: number): Contestant {
+  /**
+   * @param {ContestantConfig} config
+   * @param {number} index
+   * @returns {Contestant}
+   */
+  makeContestant(config, index) {
     return {
       ...config,
       id: index,
@@ -483,7 +473,7 @@ export class ClawpartyScene extends Phaser.Scene {
       stunnedMs: 0,
       brushX: 0,
       brushY: 0,
-      coveredNodes: new Set<number>(),
+      coveredNodes: new Set(),
       paintAccumulator: 0,
       paintPenalty: 0,
       paintShapeIndex: 0,
@@ -493,18 +483,18 @@ export class ClawpartyScene extends Phaser.Scene {
     };
   }
 
-  private shuffleCpuDifficulties() {
+  shuffleCpuDifficulties() {
     for (const player of this.contestants) {
       if (!player.isHuman) {
         const preset = CPU_PRESETS[player.id];
-        player.difficulty = clamp(preset.difficulty + Phaser.Math.FloatBetween(-0.04, 0.04), 0.12, 0.62);
-        player.mistakeRate = clamp(preset.mistakeRate + Phaser.Math.FloatBetween(-0.04, 0.04), 0.12, 0.62);
-        player.reactionMs = preset.reactionMs + Phaser.Math.Between(-80, 120);
+        player.difficulty = clamp(preset.difficulty + floatBetween(-0.04, 0.04), 0.12, 0.62);
+        player.mistakeRate = clamp(preset.mistakeRate + floatBetween(-0.04, 0.04), 0.12, 0.62);
+        player.reactionMs = preset.reactionMs + between(-80, 120);
       }
     }
   }
 
-  private savePartyProgress(force = false) {
+  savePartyProgress(force = false) {
     if (this.phase !== "countdown" && this.phase !== "playing" && this.phase !== "roundOver") {
       return;
     }
@@ -514,7 +504,7 @@ export class ClawpartyScene extends Phaser.Scene {
     }
     this.lastPartySaveMs = now;
 
-    const save: SavedPartyProgress = {
+    const save = {
       version: 1,
       savedAt: now,
       phase: this.phase,
@@ -547,8 +537,8 @@ export class ClawpartyScene extends Phaser.Scene {
     }
   }
 
-  private tryRestorePartyProgress() {
-    let raw: string | null = null;
+  tryRestorePartyProgress() {
+    let raw = null;
     try {
       raw = localStorage.getItem(PARTY_SAVE_KEY);
     } catch {
@@ -558,7 +548,7 @@ export class ClawpartyScene extends Phaser.Scene {
       return;
     }
 
-    let parsed: unknown;
+    let parsed;
     try {
       parsed = JSON.parse(raw);
     } catch {
@@ -621,8 +611,12 @@ export class ClawpartyScene extends Phaser.Scene {
     this.showToast(parsed.phase === "roundOver" ? "Recovered party progress" : "Recovered party progress: replaying this round", 2600);
   }
 
-  private isSavedPartyProgress(value: unknown): value is SavedPartyProgress {
-    const save = value as SavedPartyProgress;
+  /**
+   * @param {unknown} value
+   * @returns {value is SavedPartyProgress}
+   */
+  isSavedPartyProgress(value) {
+    const save = /** @type {SavedPartyProgress} */ (value);
     const validGameKey = save?.singleGameKey === undefined || MINI_GAMES.some((game) => game.key === save.singleGameKey);
     return (
       Boolean(save) &&
@@ -656,7 +650,7 @@ export class ClawpartyScene extends Phaser.Scene {
     );
   }
 
-  private clearPartyProgress() {
+  clearPartyProgress() {
     this.lastPartySaveMs = 0;
     try {
       localStorage.removeItem(PARTY_SAVE_KEY);
@@ -665,41 +659,28 @@ export class ClawpartyScene extends Phaser.Scene {
     }
   }
 
-  private createContestantViews() {
-    for (const view of this.views.values()) {
-      view.container.destroy(true);
-    }
+  createContestantViews() {
     this.views.clear();
 
     for (const player of this.contestants) {
-      const shadow = this.add.ellipse(0, 12, 42, 13, 0x000000, 0.42);
-      const sprite = this.add.image(0, -19, `${player.sprite}-walk`, 0).setDisplaySize(58, 58);
-      const accessory = this.add.graphics();
-      const carryIcon = this.add.graphics();
-      const label = this.add
-        .text(0, 20, player.isHuman ? "YOU" : player.name, {
-          fontFamily: "monospace",
-          fontSize: "10px",
-          color: "#fff4d7",
-          stroke: "#000000",
-          strokeThickness: 3,
-        })
-        .setOrigin(0.5, 0);
-      const score = this.add
-        .text(0, -64, "", {
-          fontFamily: "monospace",
-          fontSize: "13px",
-          color: "#ffffff",
-          stroke: "#000000",
-          strokeThickness: 4,
-        })
-        .setOrigin(0.5, 0.5);
-      const container = this.add.container(player.x, player.y, [shadow, sprite, accessory, carryIcon, label, score]).setDepth(4);
-      this.views.set(player.id, { container, sprite, accessory, carryIcon, label, score });
+      const label = new Label({ fontSize: 10, color: "#fff4d7", stroke: "#000000", strokeThickness: 3 }, 0.5, 0)
+        .setText(player.isHuman ? "YOU" : player.name)
+        .setPosition(0, 20);
+      const score = new Label({ fontSize: 13, color: "#ffffff", stroke: "#000000", strokeThickness: 4 }).setPosition(0, -64);
+      this.views.set(player.id, {
+        x: player.x,
+        y: player.y,
+        sprite: { x: 0, y: -19, w: 58, h: 58, frame: 0, angle: 0, alpha: 1, flipX: false },
+        accessory: new Gfx(),
+        carryIcon: new Gfx(),
+        label,
+        score,
+      });
     }
   }
 
-  private startParty(singleGameKey?: MiniGameKey) {
+  /** @param {MiniGameKey} [singleGameKey] */
+  startParty(singleGameKey) {
     this.clearPartyProgress();
     this.singleGameKey = singleGameKey;
     this.phase = "playing";
@@ -718,7 +699,7 @@ export class ClawpartyScene extends Phaser.Scene {
     this.beginNextRound();
   }
 
-  private beginNextRound() {
+  beginNextRound() {
     this.roundIndex += 1;
     const roundLimit = this.singleGameKey ? 1 : TOTAL_ROUNDS;
     if (this.roundIndex > roundLimit) {
@@ -766,7 +747,7 @@ export class ClawpartyScene extends Phaser.Scene {
     this.savePartyProgress(true);
   }
 
-  private resetRoundPlayers() {
+  resetRoundPlayers() {
     for (const player of this.contestants) {
       player.roundScore = 0;
       player.carrying = undefined;
@@ -776,7 +757,7 @@ export class ClawpartyScene extends Phaser.Scene {
       player.actionCooldownMs = 0;
       player.stunnedMs = 0;
       player.finishMs = undefined;
-      player.coveredNodes = new Set<number>();
+      player.coveredNodes = new Set();
       player.paintAccumulator = 0;
       player.paintPenalty = 0;
       player.paintShapeIndex = 0;
@@ -786,7 +767,7 @@ export class ClawpartyScene extends Phaser.Scene {
     }
   }
 
-  private setupChef() {
+  setupChef() {
     const starts = this.cornerStarts(54);
     this.contestants.forEach((player, index) => {
       player.x = starts[index].x;
@@ -799,14 +780,14 @@ export class ClawpartyScene extends Phaser.Scene {
     }
   }
 
-  private setupPaint() {
+  setupPaint() {
     this.contestants.forEach((player, index) => {
       player.paintShapeIndex = index;
     });
     this.restorePaintBrushes();
   }
 
-  private restorePaintBrushes() {
+  restorePaintBrushes() {
     this.layoutPaintBoards();
     this.contestants.forEach((player, index) => {
       const board = this.paintBoards[index];
@@ -819,7 +800,7 @@ export class ClawpartyScene extends Phaser.Scene {
     });
   }
 
-  private setupClaw() {
+  setupClaw() {
     this.contestants.forEach((player, index) => {
       const start = this.homeBase(player);
       player.x = start.x;
@@ -832,9 +813,9 @@ export class ClawpartyScene extends Phaser.Scene {
     }
   }
 
-  private setupSoccer() {
-    this.soccerKeeperId = Phaser.Math.Between(0, this.contestants.length - 1);
-    this.soccerShooterOrder = Phaser.Utils.Array.Shuffle(this.contestants.filter((player) => player.id !== this.soccerKeeperId).map((player) => player.id));
+  setupSoccer() {
+    this.soccerKeeperId = between(0, this.contestants.length - 1);
+    this.soccerShooterOrder = shuffle(this.contestants.filter((player) => player.id !== this.soccerKeeperId).map((player) => player.id));
     this.soccerShooterIndex = 0;
     this.soccerCurrentShooterId = this.soccerShooterOrder[0] ?? this.contestants[0].id;
     this.soccerPhase = "aim";
@@ -860,12 +841,12 @@ export class ClawpartyScene extends Phaser.Scene {
     this.beginSoccerTurn(false);
   }
 
-  private beginSoccerTurn(advance = true) {
+  beginSoccerTurn(advance = true) {
     if (advance) {
       this.soccerShooterIndex += 1;
     }
     if (this.soccerShooterIndex >= this.soccerShooterOrder.length) {
-      this.soccerShooterOrder = Phaser.Utils.Array.Shuffle(this.contestants.filter((player) => player.id !== this.soccerKeeperId).map((player) => player.id));
+      this.soccerShooterOrder = shuffle(this.contestants.filter((player) => player.id !== this.soccerKeeperId).map((player) => player.id));
       this.soccerShooterIndex = 0;
     }
 
@@ -876,7 +857,7 @@ export class ClawpartyScene extends Phaser.Scene {
     this.soccerCurrentShooterId = this.soccerShooterOrder[this.soccerShooterIndex] ?? this.contestants[0].id;
     this.soccerPhase = "aim";
     this.soccerTurnMs = 4_400;
-    this.soccerAimX = clamp(goal.x + goal.w * Phaser.Math.FloatBetween(0.18, 0.82), goal.x + 20, goal.x + goal.w - 20);
+    this.soccerAimX = clamp(goal.x + goal.w * floatBetween(0.18, 0.82), goal.x + 20, goal.x + goal.w - 20);
 
     const benchSpots = [
       { x: this.arena.left + 54, y: this.arena.bottom - 48 },
@@ -901,7 +882,7 @@ export class ClawpartyScene extends Phaser.Scene {
       }
       player.targetX = player.x;
       player.targetY = player.y;
-      player.aiThinkMs = player.isHuman ? 0 : player.reactionMs + Phaser.Math.Between(560, 1_050);
+      player.aiThinkMs = player.isHuman ? 0 : player.reactionMs + between(560, 1_050);
     });
 
     const ball = this.soccerBalls[0] ?? {
@@ -921,9 +902,9 @@ export class ClawpartyScene extends Phaser.Scene {
     this.soccerBalls = [ball];
   }
 
-  private setupDog() {
+  setupDog() {
     this.dogState = "sleep";
-    this.dogStateMs = Phaser.Math.Between(2_100, 3_800);
+    this.dogStateMs = between(2_100, 3_800);
     this.dogGraceMs = 0;
     this.dogChase = undefined;
     const dog = this.dogPoint();
@@ -957,12 +938,12 @@ export class ClawpartyScene extends Phaser.Scene {
     });
   }
 
-  private setupCount() {
+  setupCount() {
     this.countCritters = [];
     this.countActual = 0;
     this.countSpawnMs = 1_250;
     this.countWatchMs = 21_000;
-    this.countTarget = Phaser.Math.Between(18, 30);
+    this.countTarget = between(18, 30);
     this.countGuessStarted = false;
     this.countGuessLockGraceMs = 0;
     this.contestants.forEach((player, index) => {
@@ -977,15 +958,16 @@ export class ClawpartyScene extends Phaser.Scene {
     });
   }
 
-  private countIslandY() {
+  countIslandY() {
     return this.arena.top + Math.min(78, Math.max(46, this.arena.height * 0.14));
   }
 
-  private countSeaTop() {
+  countSeaTop() {
     return this.arena.top + Math.min(158, Math.max(108, this.arena.height * 0.3));
   }
 
-  private countLookoutSpot(index: number) {
+  /** @param {number} index */
+  countLookoutSpot(index) {
     const lanes = [0.2, 0.39, 0.61, 0.8];
     return {
       x: this.arena.left + this.arena.width * lanes[index],
@@ -993,7 +975,7 @@ export class ClawpartyScene extends Phaser.Scene {
     };
   }
 
-  private setupMemory() {
+  setupMemory() {
     this.memoryCycle = 0;
     this.memoryPhase = "show";
     this.memoryPhaseMs = 3_800;
@@ -1009,7 +991,11 @@ export class ClawpartyScene extends Phaser.Scene {
     });
   }
 
-  private updateActiveMinigame(delta: number, deltaMs: number) {
+  /**
+   * @param {number} delta
+   * @param {number} deltaMs
+   */
+  updateActiveMinigame(delta, deltaMs) {
     if (this.currentGame.key === "chef") {
       this.updateChef(delta, deltaMs);
     } else if (this.currentGame.key === "paint") {
@@ -1027,7 +1013,11 @@ export class ClawpartyScene extends Phaser.Scene {
     }
   }
 
-  private updateChef(delta: number, deltaMs: number) {
+  /**
+   * @param {number} delta
+   * @param {number} deltaMs
+   */
+  updateChef(delta, deltaMs) {
     this.drawChefArena();
     for (const player of this.contestants) {
       this.tickCooldowns(player, deltaMs);
@@ -1044,7 +1034,12 @@ export class ClawpartyScene extends Phaser.Scene {
     }
   }
 
-  private updateChefAi(player: Contestant, delta: number, deltaMs: number) {
+  /**
+   * @param {Contestant} player
+   * @param {number} delta
+   * @param {number} deltaMs
+   */
+  updateChefAi(player, delta, deltaMs) {
     player.aiThinkMs -= deltaMs;
     const basket = this.homeBase(player);
 
@@ -1060,13 +1055,13 @@ export class ClawpartyScene extends Phaser.Scene {
       const target = this.pickAiIngredientTarget(player);
       if (target) {
         const drift = player.mistakeRate * 72;
-        player.targetX = target.x + Phaser.Math.FloatBetween(-drift, drift);
-        player.targetY = target.y + Phaser.Math.FloatBetween(-drift, drift);
+        player.targetX = target.x + floatBetween(-drift, drift);
+        player.targetY = target.y + floatBetween(-drift, drift);
       } else {
-        player.targetX = Phaser.Math.Between(this.arena.left + 40, this.arena.right - 40);
-        player.targetY = Phaser.Math.Between(this.arena.top + 60, this.arena.bottom - 40);
+        player.targetX = between(this.arena.left + 40, this.arena.right - 40);
+        player.targetY = between(this.arena.top + 60, this.arena.bottom - 40);
       }
-      player.aiThinkMs = player.reactionMs + Phaser.Math.Between(120, 420);
+      player.aiThinkMs = player.reactionMs + between(120, 420);
     }
 
     const target = this.nearestIngredient(player.x, player.y, 40);
@@ -1078,7 +1073,8 @@ export class ClawpartyScene extends Phaser.Scene {
     }
   }
 
-  private tryChefAuto(player: Contestant) {
+  /** @param {Contestant} player */
+  tryChefAuto(player) {
     const basket = this.homeBase(player);
     if (player.carrying && distance(player.x, player.y, basket.x, basket.y) < 58) {
       this.deliverIngredient(player);
@@ -1090,7 +1086,11 @@ export class ClawpartyScene extends Phaser.Scene {
     }
   }
 
-  private pickIngredient(player: Contestant, ingredient: Ingredient) {
+  /**
+   * @param {Contestant} player
+   * @param {Ingredient} ingredient
+   */
+  pickIngredient(player, ingredient) {
     if (ingredient.carriedBy !== undefined || player.carrying) {
       return;
     }
@@ -1099,7 +1099,8 @@ export class ClawpartyScene extends Phaser.Scene {
     this.bursts.push({ x: player.x, y: player.y - 30, lifeMs: 230, color: ingredient.color });
   }
 
-  private deliverIngredient(player: Contestant) {
+  /** @param {Contestant} player */
+  deliverIngredient(player) {
     if (!player.carrying) {
       return;
     }
@@ -1110,7 +1111,11 @@ export class ClawpartyScene extends Phaser.Scene {
     this.spawnIngredient();
   }
 
-  private updatePaint(delta: number, deltaMs: number) {
+  /**
+   * @param {number} delta
+   * @param {number} deltaMs
+   */
+  updatePaint(delta, deltaMs) {
     this.layoutPaintBoards();
     this.drawPaintArena();
     const elapsedMs = this.currentGame.durationMs - this.timerMs;
@@ -1132,7 +1137,12 @@ export class ClawpartyScene extends Phaser.Scene {
     }
   }
 
-  private updateHumanPaint(player: Contestant, board: PaintBoard, delta: number) {
+  /**
+   * @param {Contestant} player
+   * @param {PaintBoard} board
+   * @param {number} delta
+   */
+  updateHumanPaint(player, board, delta) {
     const oldX = player.brushX;
     const oldY = player.brushY;
     const pointerOnBoard = this.paintPointer.down && this.isInsideRect(this.paintPointer.x, this.paintPointer.y, board);
@@ -1163,7 +1173,13 @@ export class ClawpartyScene extends Phaser.Scene {
     }
   }
 
-  private updatePaintAi(player: Contestant, board: PaintBoard, delta: number, elapsedMs: number) {
+  /**
+   * @param {Contestant} player
+   * @param {PaintBoard} board
+   * @param {number} delta
+   * @param {number} elapsedMs
+   */
+  updatePaintAi(player, board, delta, elapsedMs) {
     const nextIndex = this.nextUncoveredNode(player, board);
     if (nextIndex === undefined) {
       this.completePaintShape(player, board, elapsedMs);
@@ -1187,7 +1203,12 @@ export class ClawpartyScene extends Phaser.Scene {
     }
   }
 
-  private coverPaintNodes(player: Contestant, board: PaintBoard, radius: number) {
+  /**
+   * @param {Contestant} player
+   * @param {PaintBoard} board
+   * @param {number} radius
+   */
+  coverPaintNodes(player, board, radius) {
     board.nodes.forEach((node, index) => {
       if (!player.coveredNodes.has(index) && distance(player.brushX, player.brushY, node.x, node.y) <= radius) {
         player.coveredNodes.add(index);
@@ -1195,7 +1216,11 @@ export class ClawpartyScene extends Phaser.Scene {
     });
   }
 
-  private penalizePaint(player: Contestant, amount: number) {
+  /**
+   * @param {Contestant} player
+   * @param {number} amount
+   */
+  penalizePaint(player, amount) {
     player.paintPenalty = Math.min(120, player.paintPenalty + amount);
     const eraseCount = Math.floor(player.paintPenalty / 7);
     if (eraseCount > 0) {
@@ -1204,18 +1229,27 @@ export class ClawpartyScene extends Phaser.Scene {
     }
   }
 
-  private erasePaintProgress(player: Contestant, count: number) {
+  /**
+   * @param {Contestant} player
+   * @param {number} count
+   */
+  erasePaintProgress(player, count) {
     const painted = [...player.coveredNodes].sort((a, b) => b - a);
     for (let i = 0; i < Math.min(count, painted.length); i += 1) {
       player.coveredNodes.delete(painted[i]);
     }
   }
 
-  private completePaintShape(player: Contestant, board: PaintBoard, elapsedMs: number) {
+  /**
+   * @param {Contestant} player
+   * @param {PaintBoard} board
+   * @param {number} elapsedMs
+   */
+  completePaintShape(player, board, elapsedMs) {
     player.roundScore += 1;
     player.finishMs = elapsedMs;
     player.paintShapeIndex += 1;
-    player.coveredNodes = new Set<number>();
+    player.coveredNodes = new Set();
     player.paintPenalty = 0;
     player.paintAccumulator = 0;
     const nextNodes = this.shapeNodes(board.x, board.y, board.w, board.h, player.paintShapeIndex);
@@ -1226,7 +1260,11 @@ export class ClawpartyScene extends Phaser.Scene {
     this.bursts.push({ x: player.brushX, y: player.brushY, lifeMs: 500, color: player.color });
   }
 
-  private updateClaw(delta: number, deltaMs: number) {
+  /**
+   * @param {number} delta
+   * @param {number} deltaMs
+   */
+  updateClaw(delta, deltaMs) {
     this.drawClawArena();
     for (const player of this.contestants) {
       this.tickCooldowns(player, deltaMs);
@@ -1247,7 +1285,12 @@ export class ClawpartyScene extends Phaser.Scene {
     }
   }
 
-  private updateClawAi(player: Contestant, delta: number, deltaMs: number) {
+  /**
+   * @param {Contestant} player
+   * @param {number} delta
+   * @param {number} deltaMs
+   */
+  updateClawAi(player, delta, deltaMs) {
     player.aiThinkMs -= deltaMs;
     const rival = this.nearestRival(player);
     if (rival && distance(player.x, player.y, rival.x, rival.y) < 62 && player.actionCooldownMs <= 0 && Math.random() < player.difficulty * 0.012) {
@@ -1268,21 +1311,22 @@ export class ClawpartyScene extends Phaser.Scene {
       const bounds = this.clawBounds();
       if (pearl) {
         const drift = player.mistakeRate * 86;
-        player.targetX = pearl.x + Phaser.Math.FloatBetween(-drift, drift);
-        player.targetY = pearl.y + Phaser.Math.FloatBetween(-drift, drift);
+        player.targetX = pearl.x + floatBetween(-drift, drift);
+        player.targetY = pearl.y + floatBetween(-drift, drift);
       } else {
-        player.targetX = Phaser.Math.Between(bounds.left + 40, bounds.right - 40);
-        player.targetY = Phaser.Math.Between(bounds.top + 44, bounds.bottom - 40);
+        player.targetX = between(bounds.left + 40, bounds.right - 40);
+        player.targetY = between(bounds.top + 44, bounds.bottom - 40);
       }
       player.targetX = clamp(player.targetX, bounds.left + 24, bounds.right - 24);
       player.targetY = clamp(player.targetY, bounds.top + 24, bounds.bottom - 24);
-      player.aiThinkMs = player.reactionMs + Phaser.Math.Between(150, 520);
+      player.aiThinkMs = player.reactionMs + between(150, 520);
     }
     this.steerTo(player, player.targetX, player.targetY, 82 + player.difficulty * 112, delta);
     this.tryPearlAuto(player);
   }
 
-  private trySnap(player: Contestant) {
+  /** @param {Contestant} player */
+  trySnap(player) {
     if (player.actionCooldownMs > 0) {
       return;
     }
@@ -1308,7 +1352,8 @@ export class ClawpartyScene extends Phaser.Scene {
     }
   }
 
-  private tryPearlAuto(player: Contestant) {
+  /** @param {Contestant} player */
+  tryPearlAuto(player) {
     const base = this.homeBase(player);
     if (player.carryingPearl && distance(player.x, player.y, base.x, base.y) < 58) {
       this.deliverPearl(player);
@@ -1327,7 +1372,8 @@ export class ClawpartyScene extends Phaser.Scene {
     this.bursts.push({ x: pearl.x, y: pearl.y, lifeMs: 300, color: pearl.color });
   }
 
-  private deliverPearl(player: Contestant) {
+  /** @param {Contestant} player */
+  deliverPearl(player) {
     if (!player.carryingPearl) {
       return;
     }
@@ -1338,7 +1384,11 @@ export class ClawpartyScene extends Phaser.Scene {
     this.spawnPearl();
   }
 
-  private updateSoccer(delta: number, deltaMs: number) {
+  /**
+   * @param {number} delta
+   * @param {number} deltaMs
+   */
+  updateSoccer(delta, deltaMs) {
     this.drawSoccerArena();
     const actionPressed = this.controls.consumeActionPress();
     const ball = this.soccerBalls[0];
@@ -1395,35 +1445,45 @@ export class ClawpartyScene extends Phaser.Scene {
     }
   }
 
-  private updateSoccerShooterAi(player: Contestant, deltaMs: number) {
+  /**
+   * @param {Contestant} player
+   * @param {number} deltaMs
+   */
+  updateSoccerShooterAi(player, deltaMs) {
     player.aiThinkMs -= deltaMs;
     const goal = this.soccerGoalRect();
     const keeper = this.contestants.find((item) => item.id === this.soccerKeeperId);
     if (player.aiThinkMs <= 0) {
       const openSide = keeper && keeper.x < goal.x + goal.w * 0.5 ? 0.78 : 0.22;
-      const drift = goal.w * (player.mistakeRate * 0.52 + Phaser.Math.FloatBetween(-0.08, 0.08));
+      const drift = goal.w * (player.mistakeRate * 0.52 + floatBetween(-0.08, 0.08));
       this.soccerAimX = clamp(goal.x + goal.w * openSide + drift, goal.x + 18, goal.x + goal.w - 18);
       this.shootSoccerBall(player);
     } else if (Math.random() < 0.08) {
       const wobble = goal.w * player.mistakeRate * 0.34;
-      this.soccerAimX = clamp(this.soccerAimX + Phaser.Math.FloatBetween(-wobble, wobble), goal.x + 18, goal.x + goal.w - 18);
+      this.soccerAimX = clamp(this.soccerAimX + floatBetween(-wobble, wobble), goal.x + 18, goal.x + goal.w - 18);
     }
   }
 
-  private updateSoccerKeeperAi(player: Contestant, delta: number, deltaMs: number) {
+  /**
+   * @param {Contestant} player
+   * @param {number} delta
+   * @param {number} deltaMs
+   */
+  updateSoccerKeeperAi(player, delta, deltaMs) {
     player.aiThinkMs -= deltaMs;
     if (player.aiThinkMs <= 0) {
       const ball = this.soccerBalls[0];
       const zone = this.soccerKeeperZone();
       const drift = this.arena.width * (player.mistakeRate * 0.2);
       const targetX = this.soccerPhase === "shot" && ball ? ball.x : this.soccerAimX;
-      player.targetX = clamp(targetX + Phaser.Math.FloatBetween(-drift, drift), zone.x + 18, zone.x + zone.w - 18);
-      player.aiThinkMs = Math.max(90, player.reactionMs * 0.36 + Phaser.Math.Between(40, 140));
+      player.targetX = clamp(targetX + floatBetween(-drift, drift), zone.x + 18, zone.x + zone.w - 18);
+      player.aiThinkMs = Math.max(90, player.reactionMs * 0.36 + between(40, 140));
     }
     this.moveKeeperTowardX(player, player.targetX, 104 + player.difficulty * 112, delta);
   }
 
-  private shootSoccerBall(player: Contestant) {
+  /** @param {Contestant} player */
+  shootSoccerBall(player) {
     if (this.soccerPhase !== "aim") {
       return;
     }
@@ -1432,7 +1492,7 @@ export class ClawpartyScene extends Phaser.Scene {
       return;
     }
     const goal = this.soccerGoalRect();
-    const miss = player.isHuman ? 0 : Phaser.Math.FloatBetween(-goal.w, goal.w) * player.mistakeRate * 0.14;
+    const miss = player.isHuman ? 0 : floatBetween(-goal.w, goal.w) * player.mistakeRate * 0.14;
     const targetX = clamp(this.soccerAimX + miss, goal.x + 14, goal.x + goal.w - 14);
     const targetY = goal.y + goal.h * 0.45;
     const dx = targetX - ball.x;
@@ -1449,7 +1509,11 @@ export class ClawpartyScene extends Phaser.Scene {
     this.bursts.push({ x: ball.x, y: ball.y, lifeMs: 260, color: player.color });
   }
 
-  private resolveSoccerShot(ball: SoccerBall, keeper: Contestant) {
+  /**
+   * @param {SoccerBall} ball
+   * @param {Contestant} keeper
+   */
+  resolveSoccerShot(ball, keeper) {
     const goal = this.soccerGoalRect();
     const keeperLineY = this.soccerKeeperLineY();
     const blockReach = keeper.actionCooldownMs > 310 ? 68 : 44;
@@ -1475,7 +1539,13 @@ export class ClawpartyScene extends Phaser.Scene {
     }
   }
 
-  private finishSoccerShot(label: string, color: number, x: number, y: number) {
+  /**
+   * @param {string} label
+   * @param {number} color
+   * @param {number} x
+   * @param {number} y
+   */
+  finishSoccerShot(label, color, x, y) {
     const ball = this.soccerBalls[0];
     if (ball) {
       ball.vx = 0;
@@ -1488,7 +1558,11 @@ export class ClawpartyScene extends Phaser.Scene {
     this.showToast(label, 620);
   }
 
-  private moveSoccerKeeper(player: Contestant, delta: number) {
+  /**
+   * @param {Contestant} player
+   * @param {number} delta
+   */
+  moveSoccerKeeper(player, delta) {
     const zone = this.soccerKeeperZone();
     const speed = 194;
     player.vx = this.controls.x * speed;
@@ -1497,7 +1571,11 @@ export class ClawpartyScene extends Phaser.Scene {
     player.y = this.soccerKeeperLineY();
   }
 
-  private trySoccerKeeperDash(player: Contestant, actionPressed: boolean) {
+  /**
+   * @param {Contestant} player
+   * @param {boolean} actionPressed
+   */
+  trySoccerKeeperDash(player, actionPressed) {
     if (!actionPressed || player.actionCooldownMs > 0) {
       return;
     }
@@ -1509,7 +1587,13 @@ export class ClawpartyScene extends Phaser.Scene {
     this.bursts.push({ x: player.x, y: player.y - 20, lifeMs: 340, color: player.color });
   }
 
-  private moveKeeperTowardX(player: Contestant, targetX: number, speed: number, delta: number) {
+  /**
+   * @param {Contestant} player
+   * @param {number} targetX
+   * @param {number} speed
+   * @param {number} delta
+   */
+  moveKeeperTowardX(player, targetX, speed, delta) {
     const zone = this.soccerKeeperZone();
     const dx = targetX - player.x;
     if (Math.abs(dx) < 2) {
@@ -1523,14 +1607,18 @@ export class ClawpartyScene extends Phaser.Scene {
     player.y = this.soccerKeeperLineY();
   }
 
-  private updateDog(delta: number, deltaMs: number) {
+  /**
+   * @param {number} delta
+   * @param {number} deltaMs
+   */
+  updateDog(delta, deltaMs) {
     this.advanceDogChase(deltaMs);
     this.drawDogArena();
     if (!this.dogChase) {
       this.tickDogState(deltaMs);
     }
 
-    const caughtThisFrame: Array<{ player: Contestant; bone: DogBone }> = [];
+    const caughtThisFrame = [];
     for (const player of this.contestants) {
       this.tickCooldowns(player, deltaMs);
       const bone = this.dogBones.find((item) => item.playerId === player.id);
@@ -1567,7 +1655,8 @@ export class ClawpartyScene extends Phaser.Scene {
     }
   }
 
-  private tickDogState(deltaMs: number) {
+  /** @param {number} deltaMs */
+  tickDogState(deltaMs) {
     this.dogStateMs -= deltaMs;
     this.dogGraceMs = Math.max(0, this.dogGraceMs - deltaMs);
     if (this.dogStateMs > 0) {
@@ -1576,20 +1665,26 @@ export class ClawpartyScene extends Phaser.Scene {
 
     if (this.dogState === "sleep") {
       this.dogState = "look";
-      this.dogStateMs = Phaser.Math.Between(1_250, 1_900);
+      this.dogStateMs = between(1_250, 1_900);
       this.dogGraceMs = 460;
       for (const player of this.contestants) {
         if (!player.isHuman) {
-          player.aiThinkMs = Math.max(80, player.reactionMs * (0.44 + player.mistakeRate) + Phaser.Math.Between(-90, 150));
+          player.aiThinkMs = Math.max(80, player.reactionMs * (0.44 + player.mistakeRate) + between(-90, 150));
         }
       }
     } else {
       this.dogState = "sleep";
-      this.dogStateMs = Phaser.Math.Between(1_850, 3_450);
+      this.dogStateMs = between(1_850, 3_450);
     }
   }
 
-  private updateDogAi(player: Contestant, bone: DogBone, delta: number, deltaMs: number) {
+  /**
+   * @param {Contestant} player
+   * @param {DogBone} bone
+   * @param {number} delta
+   * @param {number} deltaMs
+   */
+  updateDogAi(player, bone, delta, deltaMs) {
     if (this.dogState === "look") {
       player.aiThinkMs -= deltaMs;
       if (player.aiThinkMs <= 0) {
@@ -1605,7 +1700,11 @@ export class ClawpartyScene extends Phaser.Scene {
     this.steerTo(player, target.x, target.y, (74 + player.difficulty * 118) * caution, delta);
   }
 
-  private tryDogBoneAuto(player: Contestant, bone: DogBone) {
+  /**
+   * @param {Contestant} player
+   * @param {DogBone} bone
+   */
+  tryDogBoneAuto(player, bone) {
     if (bone.carriedBy === player.id) {
       bone.x = player.x;
       bone.y = player.y - 48;
@@ -1622,7 +1721,11 @@ export class ClawpartyScene extends Phaser.Scene {
     }
   }
 
-  private deliverDogBone(player: Contestant, bone: DogBone) {
+  /**
+   * @param {Contestant} player
+   * @param {DogBone} bone
+   */
+  deliverDogBone(player, bone) {
     bone.delivered = true;
     bone.carriedBy = undefined;
     player.finishMs = this.currentGame.durationMs - this.timerMs;
@@ -1632,7 +1735,8 @@ export class ClawpartyScene extends Phaser.Scene {
     this.bursts.push({ x: player.x, y: player.y - 28, lifeMs: 560, color: 0xffd75e });
   }
 
-  private catchByDog(caught: Array<{ player: Contestant; bone: DogBone }>) {
+  /** @param {Array<{ player: Contestant, bone: DogBone }>} caught */
+  catchByDog(caught) {
     if (this.dogChase) {
       return;
     }
@@ -1653,7 +1757,8 @@ export class ClawpartyScene extends Phaser.Scene {
     this.startDogChase(caught);
   }
 
-  private startDogChase(caught: Array<{ player: Contestant; bone: DogBone }>) {
+  /** @param {Array<{ player: Contestant, bone: DogBone }>} caught */
+  startDogChase(caught) {
     const dog = this.dogPoint();
     this.dogState = "look";
     this.dogStateMs = 1_600;
@@ -1683,7 +1788,8 @@ export class ClawpartyScene extends Phaser.Scene {
     };
   }
 
-  private advanceDogChase(deltaMs: number) {
+  /** @param {number} deltaMs */
+  advanceDogChase(deltaMs) {
     if (!this.dogChase) {
       return;
     }
@@ -1691,15 +1797,15 @@ export class ClawpartyScene extends Phaser.Scene {
     chase.elapsedMs += deltaMs;
     const t = clamp(chase.elapsedMs / chase.durationMs, 0, 1);
     const eased = t * t * (3 - 2 * t);
-    chase.x = Phaser.Math.Linear(chase.fromX, chase.toX, eased);
-    chase.y = Phaser.Math.Linear(chase.fromY, chase.toY, eased);
+    chase.x = lerp(chase.fromX, chase.toX, eased);
+    chase.y = lerp(chase.fromY, chase.toY, eased);
 
     if (chase.phase === "toHome") {
       for (const caught of chase.caught) {
         const player = this.contestants.find((item) => item.id === caught.playerId);
         if (player) {
-          player.x = Phaser.Math.Linear(caught.fromX, caught.homeX, eased);
-          player.y = Phaser.Math.Linear(caught.fromY, caught.homeY, eased);
+          player.x = lerp(caught.fromX, caught.homeX, eased);
+          player.y = lerp(caught.fromY, caught.homeY, eased);
         }
       }
     }
@@ -1741,14 +1847,19 @@ export class ClawpartyScene extends Phaser.Scene {
 
     this.dogChase = undefined;
     this.dogState = "sleep";
-    this.dogStateMs = Phaser.Math.Between(1_700, 2_800);
+    this.dogStateMs = between(1_700, 2_800);
   }
 
-  private isDogDragging(playerId: number) {
+  /** @param {number} playerId */
+  isDogDragging(playerId) {
     return this.dogChase?.caught.some((caught) => caught.playerId === playerId) ?? false;
   }
 
-  private updateCount(delta: number, deltaMs: number) {
+  /**
+   * @param {number} delta
+   * @param {number} deltaMs
+   */
+  updateCount(delta, deltaMs) {
     this.drawCountArena();
     const elapsedMs = this.currentGame.durationMs - this.timerMs;
     const guessing = elapsedMs >= this.countWatchMs;
@@ -1767,7 +1878,7 @@ export class ClawpartyScene extends Phaser.Scene {
         for (let i = 0; i < Math.min(group, room); i += 1) {
           this.spawnCountCritter(i * 42);
         }
-        this.countSpawnMs = Phaser.Math.Between(1_250 - pace * 760, 1_680 - pace * 880);
+        this.countSpawnMs = between(1_250 - pace * 760, 1_680 - pace * 880);
       }
     } else if (!this.countGuessStarted) {
       this.countGuessStarted = true;
@@ -1806,7 +1917,11 @@ export class ClawpartyScene extends Phaser.Scene {
     }
   }
 
-  private updateMemory(delta: number, deltaMs: number) {
+  /**
+   * @param {number} delta
+   * @param {number} deltaMs
+   */
+  updateMemory(delta, deltaMs) {
     this.layoutMemoryTiles();
     this.drawMemoryArena();
     this.memoryPhaseMs -= deltaMs;
@@ -1846,25 +1961,29 @@ export class ClawpartyScene extends Phaser.Scene {
     }
   }
 
-  private spawnCountCritter(offsetY = 0) {
+  spawnCountCritter(offsetY = 0) {
     const direction = Math.random() > 0.5 ? 1 : -1;
-    const sprite = ["invader", "shrimp", "apple", "lobster"][Phaser.Math.Between(0, 3)];
+    const sprite = ["invader", "shrimp", "apple", "lobster"][between(0, 3)];
     this.countActual += 1;
     const seaTop = this.countSeaTop();
     const minY = seaTop + 22;
     const maxY = this.arena.bottom - 46;
-    const y = Phaser.Math.Between(minY, maxY);
+    const y = between(minY, maxY);
     this.countCritters.push({
       id: this.nextItemId++,
       x: direction > 0 ? this.arena.left - 48 : this.arena.right + 48,
       y: clamp(y + offsetY * (Math.random() > 0.5 ? 1 : -1), minY, maxY),
-      vx: direction * Phaser.Math.Between(82, 156),
+      vx: direction * between(82, 156),
       sprite,
       wobble: Math.random() * 20,
     });
   }
 
-  private tickGuessInput(player: Contestant, deltaMs: number) {
+  /**
+   * @param {Contestant} player
+   * @param {number} deltaMs
+   */
+  tickGuessInput(player, deltaMs) {
     player.actionCooldownMs = Math.max(0, player.actionCooldownMs - deltaMs);
     if (player.actionCooldownMs > 0) {
       return;
@@ -1878,16 +1997,17 @@ export class ClawpartyScene extends Phaser.Scene {
     }
   }
 
-  private cpuCountError(player: Contestant) {
+  /** @param {Contestant} player */
+  cpuCountError(player) {
     const spread = player.id === 1 ? 2 : player.id === 2 ? 4 : 7;
-    const error = Phaser.Math.Between(-spread, spread);
+    const error = between(-spread, spread);
     if (Math.random() < 1 - player.mistakeRate) {
       return Math.round(error * 0.55);
     }
     return error;
   }
 
-  private layoutMemoryTiles(forceNew = false) {
+  layoutMemoryTiles(forceNew = false) {
     if (this.memoryTiles.length > 0 && !forceNew) {
       const cols = 4;
       const rows = 4;
@@ -1912,36 +2032,41 @@ export class ClawpartyScene extends Phaser.Scene {
       { name: "yellow", color: 0xffd75e },
     ];
     this.memoryTiles = Array.from({ length: 16 }, (_, index) => {
-      const picked = colors[(index + Phaser.Math.Between(0, colors.length - 1)) % colors.length];
+      const picked = colors[(index + between(0, colors.length - 1)) % colors.length];
       return { x: 0, y: 0, w: 0, h: 0, color: picked.color, name: picked.name, safe: false };
     });
-    Phaser.Utils.Array.Shuffle(this.memoryTiles);
+    shuffle(this.memoryTiles);
     this.layoutMemoryTiles(false);
   }
 
-  private pickMemoryTarget() {
+  pickMemoryTarget() {
     const names = ["red", "blue", "green", "yellow"];
-    this.memoryTarget = names[(this.roundIndex + this.memoryCycle + Phaser.Math.Between(0, 3)) % names.length];
+    this.memoryTarget = names[(this.roundIndex + this.memoryCycle + between(0, 3)) % names.length];
     for (const tile of this.memoryTiles) {
       tile.safe = tile.name === this.memoryTarget;
     }
   }
 
-  private chooseMemoryTargets() {
+  chooseMemoryTargets() {
     for (const player of this.contestants) {
       if (player.isHuman || !player.alive) {
         continue;
       }
       const shouldMiss = Math.random() < player.mistakeRate * 0.55;
       const options = this.memoryTiles.filter((tile) => shouldMiss ? !tile.safe : tile.safe);
-      const tile = options[Phaser.Math.Between(0, Math.max(0, options.length - 1))] ?? this.memoryTiles[0];
-      player.targetX = tile.x + tile.w * Phaser.Math.FloatBetween(0.32, 0.68);
-      player.targetY = tile.y + tile.h * Phaser.Math.FloatBetween(0.32, 0.68);
-      player.aiThinkMs = player.reactionMs + Phaser.Math.Between(120, 520);
+      const tile = options[between(0, Math.max(0, options.length - 1))] ?? this.memoryTiles[0];
+      player.targetX = tile.x + tile.w * floatBetween(0.32, 0.68);
+      player.targetY = tile.y + tile.h * floatBetween(0.32, 0.68);
+      player.aiThinkMs = player.reactionMs + between(120, 520);
     }
   }
 
-  private updateMemoryAi(player: Contestant, delta: number, deltaMs: number) {
+  /**
+   * @param {Contestant} player
+   * @param {number} delta
+   * @param {number} deltaMs
+   */
+  updateMemoryAi(player, delta, deltaMs) {
     player.aiThinkMs -= deltaMs;
     if (player.aiThinkMs > 0) {
       return;
@@ -1949,7 +2074,7 @@ export class ClawpartyScene extends Phaser.Scene {
     this.steerTo(player, player.targetX, player.targetY, 88 + player.difficulty * 128, delta);
   }
 
-  private resolveMemoryCycle() {
+  resolveMemoryCycle() {
     for (const player of this.contestants) {
       if (!player.alive) {
         continue;
@@ -1966,7 +2091,7 @@ export class ClawpartyScene extends Phaser.Scene {
     }
   }
 
-  private endRound() {
+  endRound() {
     if (this.phase !== "playing") {
       return;
     }
@@ -1992,7 +2117,7 @@ export class ClawpartyScene extends Phaser.Scene {
     this.time.delayedCall(6_200, () => this.beginNextRound());
   }
 
-  private finishParty() {
+  finishParty() {
     this.phase = "final";
     this.clearPartyProgress();
     const winners = this.partyWinners();
@@ -2011,7 +2136,7 @@ export class ClawpartyScene extends Phaser.Scene {
     this.updateDom(true);
   }
 
-  private isRoundComplete() {
+  isRoundComplete() {
     if (this.currentGame.key === "memory" && this.phase === "playing") {
       return this.contestants.every((player) => !player.alive);
     }
@@ -2021,7 +2146,7 @@ export class ClawpartyScene extends Phaser.Scene {
     return false;
   }
 
-  private roundWinners() {
+  roundWinners() {
     if (this.currentGame.key === "paint") {
       const topScore = Math.max(...this.contestants.map((player) => player.roundScore));
       return this.contestants.filter((player) => player.roundScore === topScore);
@@ -2034,7 +2159,7 @@ export class ClawpartyScene extends Phaser.Scene {
     return this.contestants.filter((player) => player.roundScore === topScore);
   }
 
-  private roundStandings() {
+  roundStandings() {
     return [...this.contestants].sort((a, b) => {
       if (this.currentGame.key === "count") {
         const errorA = Math.abs(a.countGuess - this.countActual);
@@ -2053,7 +2178,8 @@ export class ClawpartyScene extends Phaser.Scene {
     });
   }
 
-  private showResultPanel(winners: Contestant[]) {
+  /** @param {Contestant[]} winners */
+  showResultPanel(winners) {
     if (!this.resultPanel || !this.resultTitle || !this.resultSubtitle || !this.resultList) {
       return;
     }
@@ -2075,7 +2201,8 @@ export class ClawpartyScene extends Phaser.Scene {
     this.resultPanel.removeAttribute("hidden");
   }
 
-  private resultScoreLabel(player: Contestant) {
+  /** @param {Contestant} player */
+  resultScoreLabel(player) {
     if (this.currentGame.key === "count") {
       return `guess ${player.countGuess} / ${this.countActual}`;
     }
@@ -2095,31 +2222,35 @@ export class ClawpartyScene extends Phaser.Scene {
     return `${player.roundScore} pts`;
   }
 
-  private overallRanks() {
+  overallRanks() {
     const sorted = this.overallStandings();
     return new Map(sorted.map((player, index) => [player.id, index + 1]));
   }
 
-  private overallStandings() {
+  overallStandings() {
     return [...this.contestants].sort((a, b) => b.crowns - a.crowns || b.totalScore - a.totalScore || a.id - b.id);
   }
 
-  private rankMovement(before: Map<number, number>, after: Map<number, number>) {
-    const moves = new Map<number, number>();
+  /**
+   * @param {Map<number, number>} before
+   * @param {Map<number, number>} after
+   */
+  rankMovement(before, after) {
+    const moves = new Map();
     for (const player of this.contestants) {
       moves.set(player.id, (before.get(player.id) ?? 0) - (after.get(player.id) ?? 0));
     }
     return moves;
   }
 
-  private partyWinners() {
+  partyWinners() {
     const bestCrowns = Math.max(...this.contestants.map((player) => player.crowns));
     const crownLeaders = this.contestants.filter((player) => player.crowns === bestCrowns);
     const bestTotal = Math.max(...crownLeaders.map((player) => player.totalScore));
     return crownLeaders.filter((player) => player.totalScore === bestTotal);
   }
 
-  private drawCurrentArena() {
+  drawCurrentArena() {
     if (this.currentGame.key === "chef") {
       this.drawChefArena();
     } else if (this.currentGame.key === "paint") {
@@ -2137,7 +2268,7 @@ export class ClawpartyScene extends Phaser.Scene {
     }
   }
 
-  private drawCountdownOverlay() {
+  drawCountdownOverlay() {
     const count = Math.max(1, Math.ceil(this.countdownMs / 1_000));
     const panelW = Math.min(this.arena.width - 28, 430);
     const panelH = Math.min(this.arena.height - 42, 284);
@@ -2161,7 +2292,7 @@ export class ClawpartyScene extends Phaser.Scene {
       .setVisible(true);
   }
 
-  private controlHint() {
+  controlHint() {
     if (this.currentGame.key === "chef") {
       return "Grab food automatically. Bring it home.";
     }
@@ -2183,7 +2314,11 @@ export class ClawpartyScene extends Phaser.Scene {
     return "Memorize colors. Stand on the called color.";
   }
 
-  private drawLobbyScene(time: number, delta: number) {
+  /**
+   * @param {number} time
+   * @param {number} delta
+   */
+  drawLobbyScene(time, delta) {
     this.drawBackground(0x07070a);
     this.drawPixelFrame(this.arena.left, this.arena.top, this.arena.width, this.arena.height, 0x1c1b24, 0x2e2a31);
     this.worldGfx.fillStyle(0x111720, 1);
@@ -2202,7 +2337,7 @@ export class ClawpartyScene extends Phaser.Scene {
     });
   }
 
-  private drawChefArena() {
+  drawChefArena() {
     this.drawBackground(0x08090d);
     this.drawPixelFrame(this.arena.left, this.arena.top, this.arena.width, this.arena.height, 0x162023, 0x394247);
     this.drawHomeBases("basket");
@@ -2214,7 +2349,7 @@ export class ClawpartyScene extends Phaser.Scene {
     }
   }
 
-  private drawPaintArena() {
+  drawPaintArena() {
     this.drawBackground(0x08080b);
     this.drawPixelFrame(this.arena.left, this.arena.top, this.arena.width, this.arena.height, 0x14101b, 0x3f354f);
 
@@ -2252,15 +2387,10 @@ export class ClawpartyScene extends Phaser.Scene {
     }
   }
 
-  private drawClawArena() {
+  drawClawArena() {
     const bounds = this.clawBounds();
     this.drawBackground(0x03151d);
-    this.clawBgImage ??= this.add.image(0, 0, "claw-seabed").setDepth(0.2).setVisible(false);
-    this.clawBgImage
-      .setVisible(true)
-      .setOrigin(0, 0)
-      .setPosition(bounds.left, bounds.top)
-      .setDisplaySize(bounds.width, bounds.height);
+    this.addSprite(0.2, "claw-seabed", bounds.left, bounds.top, bounds.width, bounds.height, { originX: 0, originY: 0 });
     this.propGfx.fillStyle(0x05253a, 0.24);
     this.propGfx.fillRect(bounds.left, bounds.top, bounds.width, bounds.height);
     this.propGfx.lineStyle(5, 0x1a5470, 1);
@@ -2278,16 +2408,7 @@ export class ClawpartyScene extends Phaser.Scene {
       if (pearl.carriedBy !== undefined) {
         continue;
       }
-      let clam = this.clamImages.get(pearl.id);
-      if (!clam) {
-        clam = this.add.image(0, 0, "clam-pearl").setDepth(2.8).setVisible(false);
-        this.clamImages.set(pearl.id, clam);
-      }
-      clam
-        .setVisible(true)
-        .setTexture(pearl.opened ? "clam-empty" : "clam-pearl")
-        .setPosition(pearl.x, pearl.y)
-        .setDisplaySize(62, 42);
+      this.addSprite(2.8, pearl.opened ? "clam-empty" : "clam-pearl", pearl.x, pearl.y, 62, 42);
       this.propGfx.fillStyle(0x000000, 0.28);
       this.propGfx.fillRect(pearl.x - 23, pearl.y + 19, 46, 6);
       this.propGfx.lineStyle(2, pearl.color, 0.8);
@@ -2308,7 +2429,7 @@ export class ClawpartyScene extends Phaser.Scene {
     }
   }
 
-  private drawSoccerArena() {
+  drawSoccerArena() {
     this.drawBackground(0x060d09);
     this.drawPixelFrame(this.arena.left, this.arena.top, this.arena.width, this.arena.height, 0x12381f, 0x6ed7ff);
     const goal = this.soccerGoalRect();
@@ -2327,19 +2448,10 @@ export class ClawpartyScene extends Phaser.Scene {
     this.propGfx.fillStyle(0xfff4d7, 0.52);
     this.propGfx.fillRect(spot.x - 5, spot.y - 5, 10, 10);
 
-    this.soccerGoalImage ??= this.add.image(0, 0, "soccer-goal").setDepth(2.4).setVisible(false);
-    this.soccerGoalImage
-      .setVisible(true)
-      .setPosition(goal.x + goal.w * 0.5, goal.y + 26)
-      .setDisplaySize(Math.min(goal.w + 58, this.arena.width * 0.72), 78);
+    this.addSprite(2.4, "soccer-goal", goal.x + goal.w * 0.5, goal.y + 26, Math.min(goal.w + 58, this.arena.width * 0.72), 78);
 
     for (const ball of this.soccerBalls) {
-      let image = this.soccerBallImages.get(ball.id);
-      if (!image) {
-        image = this.add.image(0, 0, "soccer-ball").setDepth(3.2).setVisible(false);
-        this.soccerBallImages.set(ball.id, image);
-      }
-      image.setVisible(true).setPosition(ball.x, ball.y).setDisplaySize(36, 36).setAlpha(this.soccerPhase === "reset" ? 0.58 : 1);
+      this.addSprite(3.2, "soccer-ball", ball.x, ball.y, 36, 36, { alpha: this.soccerPhase === "reset" ? 0.58 : 1 });
     }
     this.drawSoccerGuide();
 
@@ -2352,12 +2464,12 @@ export class ClawpartyScene extends Phaser.Scene {
           ? "YOU ARE GK: SLIDE L/R"
           : `${shooter?.name ?? "CPU"} SHOOTS`;
     this.overlayHint
-      .setText(`${hint}  G+2 B+1`)
+      .setText(`${hint} G+2 B+1`)
       .setPosition(this.arena.cx, this.arena.top + 32)
       .setVisible(true);
   }
 
-  private drawSoccerGuide() {
+  drawSoccerGuide() {
     const ball = this.soccerBalls[0];
     if (!ball) {
       return;
@@ -2393,7 +2505,7 @@ export class ClawpartyScene extends Phaser.Scene {
     }
   }
 
-  private drawDogArena() {
+  drawDogArena() {
     this.drawBackground(0x08070a);
     this.drawPixelFrame(this.arena.left, this.arena.top, this.arena.width, this.arena.height, 0x172018, 0x4d3a2d);
     this.drawHomeBases("bone");
@@ -2408,12 +2520,7 @@ export class ClawpartyScene extends Phaser.Scene {
     const dogTexture = chase ? "dog-run" : this.dogState === "look" ? "dog-alert" : "dog-sleep";
     const dogX = chase ? chase.x : dog.x;
     const dogY = chase ? chase.y : dog.y + (this.dogState === "look" ? -4 : 0);
-    this.dogImage ??= this.add.image(0, 0, dogTexture).setDepth(2.5).setVisible(false);
-    this.dogImage
-      .setTexture(dogTexture)
-      .setVisible(true)
-      .setPosition(dogX, dogY)
-      .setDisplaySize(dogW, dogH);
+    this.addSprite(2.5, dogTexture, dogX, dogY, dogW, dogH);
 
     if (this.dogState === "look" && !chase) {
       this.propGfx.fillStyle(0x050505, 1);
@@ -2425,32 +2532,17 @@ export class ClawpartyScene extends Phaser.Scene {
     }
 
     for (const bone of this.dogBones) {
-      let image = this.dogBoneImages.get(bone.playerId);
-      if (!image) {
-        image = this.add.image(0, 0, "bone").setDepth(3.1).setVisible(false);
-        this.dogBoneImages.set(bone.playerId, image);
-      }
       const carrier = bone.carriedBy === undefined ? undefined : this.contestants.find((player) => player.id === bone.carriedBy);
       const base = this.dogHomeBase(this.contestants[bone.playerId]);
       const x = bone.delivered ? base.x : carrier ? carrier.x : bone.x;
       const y = bone.delivered ? base.y - 28 : carrier ? carrier.y - 52 : bone.y;
-      image
-        .setVisible(true)
-        .setTint(bone.color)
-        .setAlpha(bone.delivered ? 0.42 : 1)
-        .setPosition(x, y)
-        .setDisplaySize(42, 24);
+      this.addSprite(3.1, "bone", x, y, 42, 24, { tint: bone.color, alpha: bone.delivered ? 0.42 : 1 });
     }
   }
 
-  private drawCountArena() {
+  drawCountArena() {
     this.drawBackground(0x03151d);
-    this.countBgImage ??= this.add.image(0, 0, "count-beach-sea").setDepth(0.2).setVisible(false);
-    this.countBgImage
-      .setVisible(true)
-      .setOrigin(0, 0)
-      .setPosition(this.arena.left, this.arena.top)
-      .setDisplaySize(this.arena.width, this.arena.height);
+    this.addSprite(0.2, "count-beach-sea", this.arena.left, this.arena.top, this.arena.width, this.arena.height, { originX: 0, originY: 0 });
 
     const elapsedMs = this.currentGame.durationMs - this.timerMs;
     const guessing = elapsedMs >= this.countWatchMs;
@@ -2503,7 +2595,12 @@ export class ClawpartyScene extends Phaser.Scene {
     }
   }
 
-  private drawCountCritter(x: number, y: number, sprite: string) {
+  /**
+   * @param {number} x
+   * @param {number} y
+   * @param {string} sprite
+   */
+  drawCountCritter(x, y, sprite) {
     const color = sprite === "apple" ? 0xe62b5e : sprite === "shrimp" ? 0xff8b4c : sprite === "lobster" ? 0xff3b26 : 0x5cc8ff;
     this.propGfx.fillStyle(0x000000, 0.32);
     this.propGfx.fillRect(x - 18, y + 17, 36, 7);
@@ -2530,7 +2627,7 @@ export class ClawpartyScene extends Phaser.Scene {
     this.propGfx.fillRect(x + 6, y - 4, 4, 12);
   }
 
-  private drawMemoryArena() {
+  drawMemoryArena() {
     this.drawBackground(0x08080b);
     this.drawPixelFrame(this.arena.left, this.arena.top, this.arena.width, this.arena.height, 0x17131f, 0x4b3658);
     const showColors = this.memoryPhase === "show" || this.memoryPhase === "resolve";
@@ -2562,7 +2659,8 @@ export class ClawpartyScene extends Phaser.Scene {
       .setVisible(true);
   }
 
-  private drawBackground(color: number) {
+  /** @param {number} color */
+  drawBackground(color) {
     this.worldGfx.fillStyle(color, 1);
     this.worldGfx.fillRect(0, 0, this.scale.width, this.scale.height);
     this.worldGfx.fillStyle(0xffffff, 0.08);
@@ -2576,23 +2674,81 @@ export class ClawpartyScene extends Phaser.Scene {
     }
   }
 
-  private hidePropImages() {
-    this.soccerGoalImage?.setVisible(false);
-    this.dogImage?.setVisible(false);
-    this.countBgImage?.setVisible(false);
-    this.clawBgImage?.setVisible(false);
-    for (const image of this.soccerBallImages.values()) {
-      image.setVisible(false);
-    }
-    for (const image of this.dogBoneImages.values()) {
-      image.setVisible(false);
-    }
-    for (const image of this.clamImages.values()) {
-      image.setVisible(false);
+  /**
+   * Queues an image for this frame. Depth orders images among themselves and
+   * against the shape layers (world 0, paint 1, props 2, contestants 4).
+   * @param {number} depth
+   * @param {string} name
+   * @param {number} x
+   * @param {number} y
+   * @param {number} w
+   * @param {number} h
+   * @param {Partial<SpriteDraw>} [options]
+   */
+  addSprite(depth, name, x, y, w, h, options = {}) {
+    const image = this.images.get(name);
+    if (image) {
+      this.sprites.push({ depth, image, x, y, w, h, ...options });
     }
   }
 
-  private drawPixelFrame(x: number, y: number, w: number, h: number, fill: number, border: number) {
+  /**
+   * Draws the frame: the shape layers, images and contestants in depth order,
+   * then effects and text on top.
+   */
+  render() {
+    const { ctx, dpr } = this.view;
+    this.view.begin(BACKGROUND);
+    const sprites = [...this.sprites].sort((a, b) => a.depth - b.depth);
+    const drawSprites = (/** @type {number} */ below) => {
+      while (sprites.length > 0 && sprites[0].depth < below) {
+        drawSprite(ctx, /** @type {SpriteDraw} */ (sprites.shift()), dpr);
+      }
+    };
+
+    this.worldGfx.draw(ctx, dpr);
+    drawSprites(1);
+    this.paintGfx.draw(ctx, dpr);
+    drawSprites(2);
+    this.propGfx.draw(ctx, dpr);
+    drawSprites(4);
+
+    for (const player of this.drawOrder) {
+      const view = this.views.get(player.id);
+      if (!view) {
+        continue;
+      }
+      ctx.fillStyle = "rgba(0,0,0,0.42)";
+      ctx.beginPath();
+      ctx.ellipse(view.x, view.y + 12, 21, 6.5, 0, 0, Math.PI * 2);
+      ctx.fill();
+      const image = this.images.get(`${player.sprite}-walk`);
+      if (image) {
+        const sprite = view.sprite;
+        drawSprite(ctx, { ...sprite, image, x: view.x + sprite.x, y: view.y + sprite.y }, dpr);
+      }
+      view.accessory.draw(ctx, dpr, view.x, view.y);
+      view.carryIcon.draw(ctx, dpr, view.x, view.y);
+      view.label.draw(ctx, view.x, view.y);
+      view.score.draw(ctx, view.x, view.y);
+    }
+
+    drawSprites(Infinity);
+    this.effectsGfx.draw(ctx, dpr);
+    this.overlayText.draw(ctx);
+    this.overlayHint.draw(ctx);
+    this.countdownText.draw(ctx);
+  }
+
+  /**
+   * @param {number} x
+   * @param {number} y
+   * @param {number} w
+   * @param {number} h
+   * @param {number} fill
+   * @param {number} border
+   */
+  drawPixelFrame(x, y, w, h, fill, border) {
     this.worldGfx.fillStyle(border, 1);
     this.worldGfx.fillRect(x, y, w, h);
     this.worldGfx.fillStyle(fill, 1);
@@ -2606,7 +2762,7 @@ export class ClawpartyScene extends Phaser.Scene {
     }
   }
 
-  private drawBursts() {
+  drawBursts() {
     for (const burst of this.bursts) {
       const t = clamp(burst.lifeMs / 500, 0, 1);
       const size = 12 + (1 - t) * 44;
@@ -2616,7 +2772,8 @@ export class ClawpartyScene extends Phaser.Scene {
     }
   }
 
-  private updateBursts(deltaMs: number) {
+  /** @param {number} deltaMs */
+  updateBursts(deltaMs) {
     for (const burst of this.bursts) {
       burst.lifeMs -= deltaMs;
     }
@@ -2624,15 +2781,16 @@ export class ClawpartyScene extends Phaser.Scene {
     this.drawBursts();
   }
 
-  private updateContestantViews() {
+  updateContestantViews() {
     const sorted = [...this.contestants].sort((a, b) => a.y - b.y);
-    sorted.forEach((player, index) => {
+    this.drawOrder = sorted;
+    sorted.forEach((player) => {
       const view = this.views.get(player.id);
       if (!view) {
         return;
       }
-      view.container.setPosition(Math.round(player.x), Math.round(player.y));
-      view.container.setDepth(4 + index * 0.01);
+      view.x = Math.round(player.x);
+      view.y = Math.round(player.y);
       const scoreY =
         this.currentGame.key === "chef" || this.currentGame.key === "paint"
           ? -88
@@ -2641,24 +2799,27 @@ export class ClawpartyScene extends Phaser.Scene {
             : -72;
       view.score.setPosition(0, scoreY);
       view.score.setText(this.scoreLabel(player));
-      view.sprite.setAlpha(!player.alive ? 0.32 : player.stunnedMs > 0 ? 0.58 : 1);
+      view.sprite.alpha = !player.alive ? 0.32 : player.stunnedMs > 0 ? 0.58 : 1;
       const moving = this.phase === "playing" && Math.hypot(player.vx, player.vy) > 18;
       const walkFrame = moving ? Math.floor(this.time.now / 95 + player.id) % 4 : 0;
-      view.sprite.setFrame(walkFrame);
+      view.sprite.frame = walkFrame;
       const step = moving ? Math.sin(this.time.now * 0.016 + player.id * 1.7) : 0;
       const bounce = Math.abs(step);
-      view.sprite.setPosition(step * 1.7, -19 + bounce * 3);
-      view.sprite.setDisplaySize(58 + bounce * 5, 58 - bounce * 3);
-      view.sprite.setAngle(moving ? step * 3 : 0);
+      view.sprite.x = step * 1.7;
+      view.sprite.y = -19 + bounce * 3;
+      view.sprite.w = 58 + bounce * 5;
+      view.sprite.h = 58 - bounce * 3;
+      view.sprite.angle = moving ? step * 3 : 0;
       if (Math.abs(player.vx) > 22) {
-        view.sprite.setFlipX(player.vx < 0);
+        view.sprite.flipX = player.vx < 0;
       }
       this.drawAccessory(player, view);
       this.drawCarry(player, view);
     });
   }
 
-  private scoreLabel(player: Contestant) {
+  /** @param {Contestant} player */
+  scoreLabel(player) {
     if (this.phase === "lobby") {
       return `C${player.crowns}`;
     }
@@ -2684,7 +2845,8 @@ export class ClawpartyScene extends Phaser.Scene {
     return `${player.roundScore}`;
   }
 
-  private scorebarValue(player: Contestant) {
+  /** @param {Contestant} player */
+  scorebarValue(player) {
     if (this.currentGame.key === "paint" && (this.phase === "playing" || this.phase === "countdown")) {
       const board = this.paintBoards[player.id];
       const progress = board ? this.paintProgress(player, board) : 0;
@@ -2709,7 +2871,11 @@ export class ClawpartyScene extends Phaser.Scene {
     return `${player.roundScore}`;
   }
 
-  private drawAccessory(player: Contestant, view: ContestantView) {
+  /**
+   * @param {Contestant} player
+   * @param {ContestantView} view
+   */
+  drawAccessory(player, view) {
     const g = view.accessory;
     g.clear();
     if (this.phase !== "playing") {
@@ -2769,7 +2935,11 @@ export class ClawpartyScene extends Phaser.Scene {
     }
   }
 
-  private drawCarry(player: Contestant, view: ContestantView) {
+  /**
+   * @param {Contestant} player
+   * @param {ContestantView} view
+   */
+  drawCarry(player, view) {
     const g = view.carryIcon;
     g.clear();
     if (player.carrying) {
@@ -2781,7 +2951,13 @@ export class ClawpartyScene extends Phaser.Scene {
     }
   }
 
-  private drawIngredient(g: Phaser.GameObjects.Graphics, x: number, y: number, color: number) {
+  /**
+   * @param {Gfx} g
+   * @param {number} x
+   * @param {number} y
+   * @param {number} color
+   */
+  drawIngredient(g, x, y, color) {
     g.fillStyle(0x000000, 0.32);
     g.fillRect(x - 8, y + 8, 18, 4);
     g.fillStyle(color, 1);
@@ -2790,7 +2966,13 @@ export class ClawpartyScene extends Phaser.Scene {
     g.fillRect(x - 3, y - 5, 5, 5);
   }
 
-  private drawPearl(g: Phaser.GameObjects.Graphics, x: number, y: number, color: number) {
+  /**
+   * @param {Gfx} g
+   * @param {number} x
+   * @param {number} y
+   * @param {number} color
+   */
+  drawPearl(g, x, y, color) {
     g.fillStyle(0x000000, 0.3);
     g.fillRect(x - 8, y + 8, 18, 4);
     g.fillStyle(color, 1);
@@ -2799,7 +2981,13 @@ export class ClawpartyScene extends Phaser.Scene {
     g.fillRect(x - 3, y - 5, 4, 4);
   }
 
-  private drawBoneIcon(g: Phaser.GameObjects.Graphics, x: number, y: number, color: number) {
+  /**
+   * @param {Gfx} g
+   * @param {number} x
+   * @param {number} y
+   * @param {number} color
+   */
+  drawBoneIcon(g, x, y, color) {
     g.fillStyle(0x000000, 0.3);
     g.fillRect(x - 13, y + 7, 26, 4);
     g.fillStyle(color, 1);
@@ -2810,7 +2998,8 @@ export class ClawpartyScene extends Phaser.Scene {
     g.fillRect(x - 9, y - 1, 18, 4);
   }
 
-  private updateDom(force: boolean, deltaMs = 0) {
+  /** @param {boolean} force */
+  updateDom(force, deltaMs = 0) {
     this.domTickMs -= deltaMs;
     if (!force && this.domTickMs > 0) {
       this.updateToast();
@@ -2861,7 +3050,11 @@ export class ClawpartyScene extends Phaser.Scene {
     this.updateToast();
   }
 
-  private showToast(message: string, durationMs: number) {
+  /**
+   * @param {string} message
+   * @param {number} durationMs
+   */
+  showToast(message, durationMs) {
     if (!this.toast) {
       return;
     }
@@ -2870,23 +3063,39 @@ export class ClawpartyScene extends Phaser.Scene {
     this.toastUntil = this.time.now + durationMs;
   }
 
-  private updateToast() {
+  updateToast() {
     if (this.toast && this.toastUntil > 0 && this.time.now > this.toastUntil) {
       this.toast.classList.remove("is-visible");
       this.toastUntil = 0;
     }
   }
 
-  private tickCooldowns(player: Contestant, deltaMs: number) {
+  /**
+   * @param {Contestant} player
+   * @param {number} deltaMs
+   */
+  tickCooldowns(player, deltaMs) {
     player.actionCooldownMs = Math.max(0, player.actionCooldownMs - deltaMs);
     player.stunnedMs = Math.max(0, player.stunnedMs - deltaMs);
   }
 
-  private moveWithInput(player: Contestant, delta: number, speed: number) {
+  /**
+   * @param {Contestant} player
+   * @param {number} delta
+   * @param {number} speed
+   */
+  moveWithInput(player, delta, speed) {
     this.moveVector(player, this.controls.x, this.controls.y, speed, delta);
   }
 
-  private steerTo(player: Contestant, targetX: number, targetY: number, speed: number, delta: number) {
+  /**
+   * @param {Contestant} player
+   * @param {number} targetX
+   * @param {number} targetY
+   * @param {number} speed
+   * @param {number} delta
+   */
+  steerTo(player, targetX, targetY, speed, delta) {
     const dx = targetX - player.x;
     const dy = targetY - player.y;
     const len = Math.hypot(dx, dy);
@@ -2896,7 +3105,14 @@ export class ClawpartyScene extends Phaser.Scene {
     this.moveVector(player, dx / len, dy / len, speed, delta);
   }
 
-  private moveVector(player: Contestant, x: number, y: number, speed: number, delta: number) {
+  /**
+   * @param {Contestant} player
+   * @param {number} x
+   * @param {number} y
+   * @param {number} speed
+   * @param {number} delta
+   */
+  moveVector(player, x, y, speed, delta) {
     if (player.stunnedMs > 0) {
       return;
     }
@@ -2914,12 +3130,26 @@ export class ClawpartyScene extends Phaser.Scene {
     player.y = clamp(player.y + player.vy * delta, this.arena.top + 34, this.arena.bottom - 24);
   }
 
-  private clampToBounds(player: Contestant, bounds: ArenaBounds, padX: number, padY: number) {
+  /**
+   * @param {Contestant} player
+   * @param {ArenaBounds} bounds
+   * @param {number} padX
+   * @param {number} padY
+   */
+  clampToBounds(player, bounds, padX, padY) {
     player.x = clamp(player.x, bounds.left + padX, bounds.right - padX);
     player.y = clamp(player.y, bounds.top + padY, bounds.bottom - padY);
   }
 
-  private steerBrush(player: Contestant, targetX: number, targetY: number, speed: number, delta: number, board: PaintBoard) {
+  /**
+   * @param {Contestant} player
+   * @param {number} targetX
+   * @param {number} targetY
+   * @param {number} speed
+   * @param {number} delta
+   * @param {PaintBoard} board
+   */
+  steerBrush(player, targetX, targetY, speed, delta, board) {
     const dx = targetX - player.brushX;
     const dy = targetY - player.brushY;
     const len = Math.max(1, Math.hypot(dx, dy));
@@ -2927,8 +3157,12 @@ export class ClawpartyScene extends Phaser.Scene {
     player.brushY = clamp(player.brushY + (dy / len) * speed * delta, board.y + 10, board.y + board.h - 10);
   }
 
-  private nearestIngredient(x: number, y: number, maxDistance = Number.POSITIVE_INFINITY) {
-    let best: Ingredient | undefined;
+  /**
+   * @param {number} x
+   * @param {number} y
+   */
+  nearestIngredient(x, y, maxDistance = Number.POSITIVE_INFINITY) {
+    let best;
     let bestDistance = maxDistance;
     for (const ingredient of this.ingredients) {
       if (ingredient.carriedBy !== undefined) {
@@ -2943,19 +3177,24 @@ export class ClawpartyScene extends Phaser.Scene {
     return best;
   }
 
-  private pickAiIngredientTarget(player: Contestant) {
+  /** @param {Contestant} player */
+  pickAiIngredientTarget(player) {
     const open = this.ingredients.filter((ingredient) => ingredient.carriedBy === undefined);
     if (open.length === 0) {
       return undefined;
     }
     if (Math.random() < player.mistakeRate * 0.45) {
-      return open[Phaser.Math.Between(0, open.length - 1)];
+      return open[between(0, open.length - 1)];
     }
     return this.nearestIngredient(player.x, player.y);
   }
 
-  private nearestPearl(x: number, y: number) {
-    let best: Pearl | undefined;
+  /**
+   * @param {number} x
+   * @param {number} y
+   */
+  nearestPearl(x, y) {
+    let best;
     let bestDistance = Number.POSITIVE_INFINITY;
     for (const pearl of this.pearls) {
       if (pearl.carriedBy !== undefined) {
@@ -2970,19 +3209,21 @@ export class ClawpartyScene extends Phaser.Scene {
     return best;
   }
 
-  private pickAiPearlTarget(player: Contestant) {
+  /** @param {Contestant} player */
+  pickAiPearlTarget(player) {
     const open = this.pearls.filter((pearl) => pearl.carriedBy === undefined);
     if (open.length === 0) {
       return undefined;
     }
     if (Math.random() < player.mistakeRate * 0.48) {
-      return open[Phaser.Math.Between(0, open.length - 1)];
+      return open[between(0, open.length - 1)];
     }
     return this.nearestPearl(player.x, player.y);
   }
 
-  private nearestRival(player: Contestant) {
-    let best: Contestant | undefined;
+  /** @param {Contestant} player */
+  nearestRival(player) {
+    let best;
     let bestDistance = Number.POSITIVE_INFINITY;
     for (const rival of this.contestants) {
       if (rival.id === player.id) {
@@ -2997,7 +3238,11 @@ export class ClawpartyScene extends Phaser.Scene {
     return best;
   }
 
-  private nextUncoveredNode(player: Contestant, board: PaintBoard) {
+  /**
+   * @param {Contestant} player
+   * @param {PaintBoard} board
+   */
+  nextUncoveredNode(player, board) {
     for (let i = 0; i < board.nodes.length; i += 1) {
       if (!player.coveredNodes.has(i)) {
         return i;
@@ -3006,14 +3251,22 @@ export class ClawpartyScene extends Phaser.Scene {
     return undefined;
   }
 
-  private paintProgress(player: Contestant, board: PaintBoard) {
+  /**
+   * @param {Contestant} player
+   * @param {PaintBoard} board
+   */
+  paintProgress(player, board) {
     if (board.nodes.length === 0) {
       return 0;
     }
     return Math.floor((player.coveredNodes.size / board.nodes.length) * 100);
   }
 
-  private isPaintShapeComplete(player: Contestant, board: PaintBoard) {
+  /**
+   * @param {Contestant} player
+   * @param {PaintBoard} board
+   */
+  isPaintShapeComplete(player, board) {
     if (board.nodes.length === 0) {
       return false;
     }
@@ -3023,8 +3276,12 @@ export class ClawpartyScene extends Phaser.Scene {
     return missing <= maxMissing && this.longestUncoveredPaintGap(player, board) <= maxGap;
   }
 
-  private longestUncoveredPaintGap(player: Contestant, board: PaintBoard) {
-    const uncovered: number[] = [];
+  /**
+   * @param {Contestant} player
+   * @param {PaintBoard} board
+   */
+  longestUncoveredPaintGap(player, board) {
+    const uncovered = [];
     for (let i = 0; i < board.nodes.length; i += 1) {
       if (!player.coveredNodes.has(i)) {
         uncovered.push(i);
@@ -3060,7 +3317,11 @@ export class ClawpartyScene extends Phaser.Scene {
     return longest;
   }
 
-  private nearestPaintNodeDistance(player: Contestant, board: PaintBoard) {
+  /**
+   * @param {Contestant} player
+   * @param {PaintBoard} board
+   */
+  nearestPaintNodeDistance(player, board) {
     let best = Number.POSITIVE_INFINITY;
     for (const node of board.nodes) {
       best = Math.min(best, distance(player.brushX, player.brushY, node.x, node.y));
@@ -3068,15 +3329,24 @@ export class ClawpartyScene extends Phaser.Scene {
     return best;
   }
 
-  private isInsideRect(x: number, y: number, rect: { x: number; y: number; w: number; h: number }) {
+  /**
+   * @param {number} x
+   * @param {number} y
+   * @param {{ x: number, y: number, w: number, h: number }} rect
+   */
+  isInsideRect(x, y, rect) {
     return x >= rect.x && x <= rect.x + rect.w && y >= rect.y && y <= rect.y + rect.h;
   }
 
-  private tileAt(x: number, y: number) {
+  /**
+   * @param {number} x
+   * @param {number} y
+   */
+  tileAt(x, y) {
     return this.memoryTiles.find((tile) => this.isInsideRect(x, y, tile));
   }
 
-  private soccerGoalRect() {
+  soccerGoalRect() {
     const w = Math.min(240, Math.max(148, this.arena.width * 0.52));
     return {
       x: this.arena.cx - w * 0.5,
@@ -3086,7 +3356,7 @@ export class ClawpartyScene extends Phaser.Scene {
     };
   }
 
-  private soccerKeeperZone() {
+  soccerKeeperZone() {
     const goal = this.soccerGoalRect();
     return {
       x: clamp(goal.x - 38, this.arena.left + 20, this.arena.right - goal.w - 20),
@@ -3096,20 +3366,24 @@ export class ClawpartyScene extends Phaser.Scene {
     };
   }
 
-  private soccerKeeperLineY() {
+  soccerKeeperLineY() {
     const zone = this.soccerKeeperZone();
     return zone.y + zone.h * 0.62;
   }
 
-  private soccerShotSpot() {
+  soccerShotSpot() {
     return {
       x: this.arena.cx,
       y: this.arena.bottom - Math.min(126, Math.max(92, this.arena.height * 0.24)),
     };
   }
 
-  private nearestSoccerBall(x: number, y: number) {
-    let best: SoccerBall | undefined;
+  /**
+   * @param {number} x
+   * @param {number} y
+   */
+  nearestSoccerBall(x, y) {
+    let best;
     let bestDistance = Number.POSITIVE_INFINITY;
     for (const ball of this.soccerBalls) {
       const d = distance(x, y, ball.x, ball.y);
@@ -3121,18 +3395,19 @@ export class ClawpartyScene extends Phaser.Scene {
     return best;
   }
 
-  private mostThreateningSoccerBall() {
+  mostThreateningSoccerBall() {
     return [...this.soccerBalls].sort((a, b) => a.y - b.y || Math.abs(b.vy) - Math.abs(a.vy))[0] ?? this.soccerBalls[0];
   }
 
-  private dogPoint() {
+  dogPoint() {
     return {
       x: this.arena.cx,
       y: this.arena.top + Math.min(118, this.arena.height * 0.33),
     };
   }
 
-  private homeBase(player: Contestant) {
+  /** @param {Contestant} player */
+  homeBase(player) {
     if (this.currentGame.key === "claw") {
       return this.clawHomeBase(player);
     }
@@ -3147,7 +3422,8 @@ export class ClawpartyScene extends Phaser.Scene {
     return bases[player.id] ?? bases[0];
   }
 
-  private clawHomeBase(player: Contestant) {
+  /** @param {Contestant} player */
+  clawHomeBase(player) {
     const bounds = this.clawBounds();
     const spreadX = Math.min(128, Math.max(74, bounds.width * 0.28));
     const spreadY = Math.min(108, Math.max(64, bounds.height * 0.26));
@@ -3164,7 +3440,7 @@ export class ClawpartyScene extends Phaser.Scene {
     };
   }
 
-  private clawSpawnRect() {
+  clawSpawnRect() {
     const bounds = this.clawBounds();
     const marginX = Math.min(78, Math.max(38, bounds.width * 0.15));
     const marginY = Math.min(76, Math.max(44, bounds.height * 0.17));
@@ -3176,7 +3452,8 @@ export class ClawpartyScene extends Phaser.Scene {
     };
   }
 
-  private dogHomeBase(player: Contestant) {
+  /** @param {Contestant} player */
+  dogHomeBase(player) {
     const padX = Math.min(82, Math.max(44, this.arena.width * 0.11));
     const padY = Math.min(62, Math.max(40, this.arena.height * 0.12));
     const upperY = Math.max(this.arena.top + 180, this.arena.bottom - padY - 92);
@@ -3189,7 +3466,8 @@ export class ClawpartyScene extends Phaser.Scene {
     return bases[player.id] ?? bases[0];
   }
 
-  private clawBounds(): ArenaBounds {
+  /** @returns {ArenaBounds} */
+  clawBounds() {
     const maxWidth = this.arena.width * 0.94;
     const maxHeight = this.arena.height * 0.82;
     const widthFromHeight = maxHeight * PEARL_PANIC_ASPECT;
@@ -3211,7 +3489,8 @@ export class ClawpartyScene extends Phaser.Scene {
     };
   }
 
-  private drawHomeBases(kind: "basket" | "tidepool" | "bone") {
+  /** @param {"basket" | "tidepool" | "bone"} kind */
+  drawHomeBases(kind) {
     for (const player of this.contestants) {
       const base = kind === "bone" ? this.dogHomeBase(player) : this.homeBase(player);
       this.propGfx.fillStyle(0x000000, 0.35);
@@ -3237,25 +3516,25 @@ export class ClawpartyScene extends Phaser.Scene {
     }
   }
 
-  private spawnIngredient() {
+  spawnIngredient() {
     const colors = [0xffd75e, 0x79f2b1, 0xff735c, 0x6ed7ff, 0xf5ead0];
     this.ingredients.push({
       id: this.nextItemId++,
-      x: Phaser.Math.Between(this.arena.left + 44, this.arena.right - 44),
-      y: Phaser.Math.Between(this.arena.top + 92, this.arena.bottom - 92),
-      color: colors[Phaser.Math.Between(0, colors.length - 1)],
+      x: between(this.arena.left + 44, this.arena.right - 44),
+      y: between(this.arena.top + 92, this.arena.bottom - 92),
+      color: colors[between(0, colors.length - 1)],
       label: "bite",
     });
   }
 
-  private spawnPearl() {
+  spawnPearl() {
     const colors = [0xfff4d7, 0x6ed7ff, 0xffd75e, 0x79f2b1];
     const rect = this.clawSpawnRect();
     let x = this.arena.cx;
     let y = this.arena.cy;
     for (let attempt = 0; attempt < 16; attempt += 1) {
-      x = Phaser.Math.Between(rect.x, rect.x + rect.w);
-      y = Phaser.Math.Between(rect.y, rect.y + rect.h);
+      x = between(rect.x, rect.x + rect.w);
+      y = between(rect.y, rect.y + rect.h);
       if (this.pearls.every((pearl) => distance(pearl.x, pearl.y, x, y) > 58)) {
         break;
       }
@@ -3264,16 +3543,16 @@ export class ClawpartyScene extends Phaser.Scene {
       id: this.nextItemId++,
       x,
       y,
-      color: colors[Phaser.Math.Between(0, colors.length - 1)],
+      color: colors[between(0, colors.length - 1)],
       opened: false,
     });
   }
 
-  private chefPlate() {
+  chefPlate() {
     return { x: this.arena.cx, y: this.arena.top + 48 };
   }
 
-  private layoutPaintBoards() {
+  layoutPaintBoards() {
     const gap = this.scale.width < 560 ? 8 : 14;
     const boardW = (this.arena.width - gap * 3) / 2;
     const boardH = Math.max(86, (this.arena.height - gap * 3 - 64) / 2);
@@ -3289,7 +3568,13 @@ export class ClawpartyScene extends Phaser.Scene {
     });
   }
 
-  private shapeNodes(x: number, y: number, w: number, h: number, shapeIndex = 0) {
+  /**
+   * @param {number} x
+   * @param {number} y
+   * @param {number} w
+   * @param {number} h
+   */
+  shapeNodes(x, y, w, h, shapeIndex = 0) {
     const margin = Math.min(26, w * 0.15, h * 0.18);
     const variant = shapeIndex % 5;
     const points =
@@ -3338,21 +3623,22 @@ export class ClawpartyScene extends Phaser.Scene {
                   [0.16, 0.32],
                   [0.5, 0.14],
             ];
-    const toNode = ([px, py]: number[]) => new Phaser.Math.Vector2(x + margin + px * (w - margin * 2), y + margin + py * (h - margin * 2));
-    const nodes: Phaser.Math.Vector2[] = [];
+    const toNode = (/** @type {number[]} */ [px, py]) => point(x + margin + px * (w - margin * 2), y + margin + py * (h - margin * 2));
+    const nodes = [];
     for (let i = 0; i < points.length - 1; i += 1) {
       const a = toNode(points[i]);
       const b = toNode(points[i + 1]);
       const samples = Math.max(10, Math.floor(distance(a.x, a.y, b.x, b.y) / PAINT_NODE_SPACING));
       for (let s = 0; s <= samples; s += 1) {
         const t = s / samples;
-        nodes.push(new Phaser.Math.Vector2(Phaser.Math.Linear(a.x, b.x, t), Phaser.Math.Linear(a.y, b.y, t)));
+        nodes.push(point(lerp(a.x, b.x, t), lerp(a.y, b.y, t)));
       }
     }
     return nodes;
   }
 
-  private cornerStarts(pad: number) {
+  /** @param {number} pad */
+  cornerStarts(pad) {
     return [
       { x: this.arena.left + pad, y: this.arena.bottom - pad },
       { x: this.arena.right - pad, y: this.arena.top + pad },
@@ -3361,7 +3647,7 @@ export class ClawpartyScene extends Phaser.Scene {
     ];
   }
 
-  private layoutLobby() {
+  layoutLobby() {
     const starts = this.cornerStarts(64);
     this.contestants.forEach((player, index) => {
       player.x = starts[index].x;
@@ -3369,16 +3655,17 @@ export class ClawpartyScene extends Phaser.Scene {
     });
   }
 
-  private clampContestants() {
+  clampContestants() {
     for (const player of this.contestants) {
       player.x = clamp(player.x, this.arena.left + 24, this.arena.right - 24);
       player.y = clamp(player.y, this.arena.top + 34, this.arena.bottom - 24);
     }
   }
 
-  private makeArena(): ArenaBounds {
-    const width = this.scale?.width ?? window.innerWidth;
-    const height = this.scale?.height ?? window.innerHeight;
+  /** @returns {ArenaBounds} */
+  makeArena() {
+    const width = this.scale.width;
+    const height = this.scale.height;
     const isShort = height < 650;
     const top = isShort ? 118 : 132;
     const bottomPad = width < 560 ? 176 : height < 560 ? 158 : 154;

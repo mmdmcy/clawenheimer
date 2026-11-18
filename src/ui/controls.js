@@ -1,15 +1,19 @@
-import type { InputController } from "../game/types";
 
-type KeyMap = Record<string, boolean>;
 
-const clamp = (value: number, min: number, max: number) => Math.max(min, Math.min(max, value));
+import { clamp } from "../lib/math.js";
 
-export function createInputController(): InputController {
-  const stick = document.querySelector<HTMLDivElement>("#stick");
-  const thumb = document.querySelector<HTMLDivElement>("#stick-thumb");
-  const actionButton = document.querySelector<HTMLButtonElement>("#action-button");
-  const keys: KeyMap = {};
-  let stickPointerId: number | null = null;
+/**
+ * Reads the on-screen stick and action button, and the keyboard as a fallback.
+ * @returns {import("../game/types.js").InputController}
+ */
+export function createInputController() {
+  const stick = /** @type {HTMLDivElement | null} */ (document.querySelector("#stick"));
+  const thumb = /** @type {HTMLDivElement | null} */ (document.querySelector("#stick-thumb"));
+  const actionButton = /** @type {HTMLButtonElement | null} */ (document.querySelector("#action-button"));
+  /** @type {Record<string, boolean>} */
+  const keys = {};
+  /** @type {number | null} */
+  let stickPointerId = null;
   let originX = 0;
   let originY = 0;
   let stickX = 0;
@@ -17,7 +21,8 @@ export function createInputController(): InputController {
   let action = false;
   let actionPressed = false;
 
-  const state: InputController = {
+  /** @type {import("../game/types.js").InputController} */
+  const state = {
     get x() {
       const keyboardX = (keys.arrowright || keys.d ? 1 : 0) - (keys.arrowleft || keys.a ? 1 : 0);
       return clamp(stickX + keyboardX, -1, 1);
@@ -38,7 +43,7 @@ export function createInputController(): InputController {
     },
   };
 
-  const setStick = (clientX: number, clientY: number) => {
+  const setStick = (/** @type {number} */ clientX, /** @type {number} */ clientY) => {
     const maxRadius = 46;
     const dx = clientX - originX;
     const dy = clientY - originY;

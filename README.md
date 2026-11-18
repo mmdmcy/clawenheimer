@@ -4,27 +4,29 @@
 
 # Clawparty
 
-Clawparty is a tiny browser party game where four weird little contestants sprint through a six-round gauntlet of arcade minigames. It is built with Phaser 3, TypeScript, and Vite, with touch controls first and keyboard controls as a fallback.
+Clawparty is a tiny browser party game where four weird little contestants sprint through a six-round gauntlet of arcade minigames. It is plain JavaScript drawn on the browser's own 2D canvas, with touch controls first and keyboard controls as a fallback.
 
 The current build includes Pearl Panic, Goal Rush, Beret Trace, Bone Nap, Critter Count, and Tile Tide.
 
 ## Play Locally
 
-```bash
-npm install
-npm run dev
-```
-
-Vite will print the local URL. Open it in a browser, or use your phone on the same network for the intended touch-control feel.
-
-## Scripts
+There is nothing to install or build. Serve the folder with any static file server, for example:
 
 ```bash
-npm run dev      # start the Vite dev server
-npm run typecheck # run the TypeScript checker
-npm run build    # create a production build
-npm run preview  # preview the built app locally
+python3 -m http.server 8000 --bind 127.0.0.1
 ```
+
+Then open http://127.0.0.1:8000 in a browser. To try the touch controls on a phone on the same network, bind the server to your computer's network address instead and open that address on the phone.
+
+The game is made of ES modules, so it needs to be served over HTTP; opening `index.html` straight from disk will not load them.
+
+## Stack
+
+- HTML and CSS for the menus, HUD and touch controls (`index.html`, `src/styles.css`).
+- The browser's 2D canvas for the arena, drawn every frame with `requestAnimationFrame` and the real time between frames, so it plays the same at 60 and 120 Hz, and sharp on high-density screens.
+- Plain JavaScript ES modules with JSDoc types; an editor with TypeScript support checks them without a build step.
+
+Clawparty has no dependencies: no packages, no bundler, no build step.
 
 ## Controls
 
@@ -58,24 +60,24 @@ Keyboard fallback:
 
 ```text
 .
+├─ assets/sprites/          pixel-art sprites and backgrounds
 ├─ docs/
 │  └─ clawparty-banner.png
-├─ public/
-│  └─ assets/sprites/
 ├─ src/
-│  ├─ game/types.ts
-│  ├─ scenes/ClawpartyScene.ts
-│  ├─ ui/controls.ts
-│  ├─ main.ts
+│  ├─ game/types.js         shared JSDoc types
+│  ├─ lib/draw.js           shapes, outlined text and images on the canvas
+│  ├─ lib/loop.js           frame loop, game clock, canvas sizing
+│  ├─ lib/math.js           random and number helpers
+│  ├─ scenes/ClawpartyScene.js  the game: rounds, minigames, CPUs, drawing
+│  ├─ ui/controls.js        joystick, action button and keyboard
+│  ├─ main.js
 │  └─ styles.css
-├─ index.html
-├─ package.json
-└─ vite.config.ts
+└─ index.html
 ```
 
 ## Assets
 
-The game uses project-local generated pixel-art sprites and background assets under `public/assets/sprites/`. No third-party starter-pack art assets are required.
+The game uses project-local generated pixel-art sprites and background assets under `assets/sprites/`. No third-party starter-pack art assets are required.
 
 The README banner at `docs/clawparty-banner.png` was generated for this open-source version of the project.
 
